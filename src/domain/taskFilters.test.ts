@@ -1,4 +1,4 @@
-import {countOpenTasks, isLegacyTaskEvent, sectionTasksForDay, taskFromLegacyEvent, tasksForCalendarDay } from './taskFilters';
+import { countOpenTasks, groupByMonth, isLegacyTaskEvent, sectionTasksForDay, taskFromLegacyEvent, tasksForCalendarDay } from './taskFilters';
 import { CalendarTask } from './types';
 
 const TODAY = new Date(2026, 7, 17); // Mon 17 Aug 2026
@@ -211,5 +211,52 @@ describe('upcoming tasks', () => {
       TODAY
     );
     expect(sections.upcoming.map(t => t.uid)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('groupByMonth', () => {
+  const now = new Date('2026-10-14T09:00:00');
+  // Local midnight, not UTC: a bare "2026-11-01" is parsed as UTC and lands in
+  // October for anyone behind it — Honolulu included — which would make this
+  // test disagree with the device it runs for.
+  const task = (uid: string, due?: string): CalendarTask =>
+    ({ uid, title: uid, completed: false, createdAt: now,
+       dueDate: due ? new Date(`${due}T00:00:00`) : undefined } as CalendarTask);
+
+  test('splits a run of work into the months it falls in', () => {
+    const groups = groupByMonth([
+      task('a', '2026-10-20'),
+      task('b', '2026-10-28'),
+      task('c', '2026-11-03'),
+    ], now);
+    expect(groups.map(g => g.label)).toEqual(['October', 'November']);
+    expect(groups[0].tasks.map(t => t.uid)).toEqual(['a', 'b']);
+    expect(groups[1].tasks.map(t => t.uid)).toEqual(['c']);
+  });
+
+  test('the year appears only when it is not this one', () => {
+    // Repeating "2026" down a column is noise; a January that belongs to next
+    // year is not.
+    const groups = groupByMonth([task('a', '2026-12-20'), task('b', '2027-01-08')], now);
+    expect(groups.map(g => g.label)).toEqual(['December', 'January 2027']);
+  });
+
+  test('months keep the order they arrived in', () => {
+    const groups = groupByMonth([task('a', '2026-11-01'), task('b', '2026-10-20')], now);
+    expect(groups.map(g => g.key)).toEqual(['2026-11', '2026-10']);
+  });
+
+  test('the same month in different years stays apart', () => {
+    const groups = groupByMonth([task('a', '2026-10-20'), task('b', '2027-10-20')], now);
+    expect(groups).toHaveLength(2);
+    expect(groups.map(g => g.key)).toEqual(['2026-10', '2027-10']);
+  });
+
+  test('undated work is skipped rather than grouped under nothing', () => {
+    expect(groupByMonth([task('a')], now)).toEqual([]);
+  });
+
+  test('an empty list produces no headings', () => {
+    expect(groupByMonth([], now)).toEqual([]);
   });
 });

@@ -44,7 +44,7 @@ import {
   TaskPriority,
   TaskStatus,
 } from '../domain/types';
-import { countOpenTasks, isSameDay as isSameCalendarDay, sectionTasksForDay } from '../domain/taskFilters';
+import { countOpenTasks, groupByMonth, isSameDay as isSameCalendarDay, sectionTasksForDay } from '../domain/taskFilters';
 import {
   isDone,
   statusGlyph,
@@ -6941,7 +6941,18 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                       items.length === 0 ? null : (
                         <View key={label || 'due'}>
                           {label ? <Text allowFontScaling={false} style={styles.taskGroupLabel}>{label}</Text> : null}
-                          {items.map(task => {
+                          {/* Upcoming has no horizon, so a term of deadlines
+                              runs to dozens of rows that say nothing about how
+                              far off any of it is. Months give it shape. */}
+                          {(label === 'Upcoming'
+                            ? groupByMonth(items, new Date())
+                            : [{ key: label, label: '', tasks: items }]
+                          ).map(group => (
+                          <View key={group.key}>
+                          {group.label ? (
+                            <Text allowFontScaling={false} style={styles.taskMonthLabel}>{group.label}</Text>
+                          ) : null}
+                          {group.tasks.map(task => {
                             const contextTag = taskContextTagFor(task.uid);
                             return (
                               <View key={task.uid} style={styles.focusTaskRow}>
@@ -6968,6 +6979,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                               </View>
                             );
                           })}
+                          </View>
+                          ))}
                         </View>
                       )
                     )
@@ -7877,6 +7890,14 @@ const styles = StyleSheet.create({
   focusSummary: { fontSize: 13, fontWeight: 'bold', color: '#000000', padding: 10 },
   subHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#000000', paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#f2f2f2' },
   subHeaderText: { fontSize: 12, fontWeight: 'bold', color: '#000000' },
+  taskMonthLabel: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#303030',
+    marginTop: 8,
+    marginBottom: 2,
+    marginLeft: 10,
+  },
   taskGroupLabel: { fontSize: 11, fontWeight: 'bold', color: '#303030', paddingHorizontal: 10, paddingTop: 6 },
   focusTaskRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4 },
   focusCheck: { fontSize: 17, color: '#000000', marginRight: 8 },

@@ -140,3 +140,50 @@ export function taskFromLegacyEvent(event: CalendarEvent): CalendarTask {
 export function isLegacyTaskEvent(event: CalendarEvent): boolean {
   return event.isTask === true || /^\[TASK\]\s*/i.test(event.summary || '');
 }
+
+export interface MonthGroup {
+  /** Sortable key, e.g. "2026-10". */
+  key: string;
+  label: string;
+  tasks: CalendarTask[];
+}
+
+/**
+ * Upcoming work broken into the months it falls in.
+ *
+ * Upcoming has no horizon — it is everything dated after the day being viewed —
+ * so once a term of deadlines is in it the list runs to dozens and a flat run of
+ * rows says nothing about how far away any of it is.
+ *
+ * The year is shown only when it is not the current one. Repeating "2026" down a
+ * column of headings is noise; a January that belongs to next year is not.
+ */
+export function groupByMonth(tasks: CalendarTask[], now: Date): MonthGroup[] {
+  const groups: MonthGroup[] = [];
+  const index = new Map<string, MonthGroup>();
+
+  for (const task of tasks) {
+    if (!task.dueDate) continue;
+    const due = new Date(task.dueDate);
+    if (!Number.isFinite(due.getTime())) continue;
+
+    const key = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}`;
+    let group = index.get(key);
+    if (!group) {
+      group = {
+        key,
+        label: due.getFullYear() === now.getFullYear()
+          ? due.toLocaleDateString('en-US', { month: 'long' })
+          : due.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        tasks: [],
+      };
+      index.set(key, group);
+      // Input order is preserved rather than re-sorted: the caller has already
+      // sorted by due date, so months arrive in order.
+      groups.push(group);
+    }
+    group.tasks.push(task);
+  }
+
+  return groups;
+}
