@@ -454,6 +454,13 @@ export function ParaFilesPanel({
       <Text allowFontScaling={false} style={styles.folder} numberOfLines={2}>
         📁 {viewFolder}
       </Text>
+      {/* Answered where the question is asked. A user who dislikes where their
+          files land is standing here, not in Settings, and the first reader to
+          hit this concluded the location was fixed. */}
+      <Text allowFontScaling={false} style={styles.hint}>
+        Choose Folder points this item at a folder you already have. New items go under
+        Settings → Notes &amp; Storage → PARA Folder Roots.
+      </Text>
       <View style={styles.actions}>
         {canGoUp && up ? (
           <TouchableOpacity style={styles.button} onPress={() => setViewFolder(up)}>

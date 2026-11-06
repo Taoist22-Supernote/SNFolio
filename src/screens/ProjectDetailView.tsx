@@ -372,7 +372,9 @@ export function ProjectDetailView({
         <ScrollView style={styles.focusedList} keyboardShouldPersistTaps="always">
           {focusedTasks.length === 0 && (
             <Text allowFontScaling={false} style={styles.hint}>
-              {deliverablesView === 'actionable' ? 'Nothing to do yet.' : 'Nothing completed yet.'}
+              {deliverablesView === 'actionable'
+                ? 'Nothing to do yet. Add one above, or open a deadline on the calendar and tap "Make it a task".'
+                : 'Nothing completed yet.'}
             </Text>
           )}
           {focusedTasks.map((task, index) => (
@@ -464,8 +466,13 @@ export function ProjectDetailView({
             </TouchableOpacity>
           </View>
           <View style={styles.deliverablePreview}>
+            {/* An empty list should say how it fills. The deadline route is
+                the one nobody finds on their own. */}
             {actionableDeliverables.length === 0 && (
-              <Text allowFontScaling={false} style={styles.hint}>Nothing to do yet.</Text>
+              <Text allowFontScaling={false} style={styles.hint}>
+                Nothing to do yet. Use + Add Task, or open a deadline on the calendar and tap
+                "Make it a task" — "Treat as deadlines" in this project's settings does it for all of them.
+              </Text>
             )}
             {actionableDeliverables.slice(0, DELIVERABLE_PREVIEW_LIMIT).map((task, index) => (
               <DeliverableTaskRow
