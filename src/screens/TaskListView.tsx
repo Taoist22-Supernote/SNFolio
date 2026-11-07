@@ -8,8 +8,11 @@ import { statusGlyph, taskRowLabel, taskStatus } from '../domain/taskModel';
 import { canPostpone, postponeOptions } from '../domain/taskPostpone';
 import {
   canHaveChildren,
+  canMoveSubtask,
+  displayParentId,
   expandRows,
   indexByUid,
+  MoveDirection,
   subtaskProgress,
   withoutNestedChildren,
 } from '../domain/subtasks';
@@ -53,6 +56,8 @@ interface TaskListViewProps {
   onPostpone?: (task: CalendarTask, to: Date) => void;
   /** Hang a new subtask off a top-level task. */
   onAddSubtask?: (parent: CalendarTask, draft: SubtaskDraft) => void;
+  /** Move a subtask within its parent's sequence. */
+  onReorderSubtask?: (task: CalendarTask, direction: MoveDirection) => void;
   weekStartsOn?: number;
   /** Hand the task to the app's date picker for an arbitrary date. */
   onPickPostponeDate?: (task: CalendarTask) => void;
@@ -81,6 +86,7 @@ export function TaskListView({
   onPostpone,
   onPickPostponeDate,
   onAddSubtask,
+  onReorderSubtask,
   weekStartsOn = 0,
 }: TaskListViewProps): React.JSX.Element {
   const [scope, setScope] = useState<TaskScope>('open');
@@ -321,6 +327,7 @@ export function TaskListView({
                     // the finished one exists.
                     const progress = depth === 0 ? subtaskProgress(tasks, task.uid) : undefined;
                     const expanded = expandedParents.has(task.uid);
+                    const parentUid = depth === 1 ? displayParentId(task, byUid) : undefined;
                     return (
                     <View key={task.uid} style={[styles.row, depth === 1 && styles.rowNested]}>
                       <TouchableOpacity onPress={() => onToggle(task)} style={styles.check}>
@@ -373,6 +380,29 @@ export function TaskListView({
                           accessibilityLabel={`Add a subtask to ${task.title}`}
                         >
                           <Text allowFontScaling={false} style={styles.noteButtonText}>＋ Sub</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {/* Steps have an order of their own, so they can be
+                          arranged. Only the direction that can act is drawn:
+                          a dimmed arrow at the end of a list is still a tap
+                          that does nothing. */}
+                      {onReorderSubtask && parentUid && canMoveSubtask(tasks, parentUid, task.uid, 'up') && (
+                        <TouchableOpacity
+                          style={styles.moveButton}
+                          onPress={() => onReorderSubtask(task, 'up')}
+                          accessibilityLabel={`Move ${task.title} up`}
+                        >
+                          <Text allowFontScaling={false} style={styles.moveButtonText}>▲</Text>
+                        </TouchableOpacity>
+                      )}
+                      {onReorderSubtask && parentUid && canMoveSubtask(tasks, parentUid, task.uid, 'down') && (
+                        <TouchableOpacity
+                          style={styles.moveButton}
+                          onPress={() => onReorderSubtask(task, 'down')}
+                          accessibilityLabel={`Move ${task.title} down`}
+                        >
+                          <Text allowFontScaling={false} style={styles.moveButtonText}>▼</Text>
                         </TouchableOpacity>
                       )}
 
@@ -680,6 +710,16 @@ const styles = StyleSheet.create({
   // the row above it rather than as a short title.
   rowNested: { paddingLeft: 26, borderLeftWidth: 2, borderLeftColor: '#909090' },
   progressText: { fontSize: 11, fontWeight: 'bold', color: '#303030' },
+  moveButton: {
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingHorizontal: 7,
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 6,
+    marginRight: 4,
+  },
+  moveButtonText: { fontSize: 12, fontWeight: 'bold', color: '#000000' },
   progressButton: {
     minHeight: 40,
     justifyContent: 'center',

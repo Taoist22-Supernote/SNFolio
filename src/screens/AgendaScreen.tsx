@@ -92,6 +92,7 @@ import { persistSuccessfulEventPush } from '../domain/eventSync';
 import {
   normaliseCollectionUrl,
   taskBelongsToCollection,
+  taskAsFormEvent,
   taskFromCaldavItem,
   taskSourceCollection,
   taskToCaldavItem,
@@ -153,14 +154,23 @@ import { hourLabel } from '../domain/dayGrid';
 import { ItemCreationModal } from './ItemCreationModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { DatePickerModal } from './DatePickerModal';
-import { postponedToDay, postponedTask } from '../domain/taskPostpone';
+import {
+  datedSubtasks,
+  postponeDayDelta,
+  postponedSubtasks,
+  postponedTask,
+  postponedToDay,
+} from '../domain/taskPostpone';
 import {
   canHaveChildren,
   childrenOf,
   completionCascade,
+  displayParentId,
   expandRows,
   indexByUid,
+  MoveDirection,
   parentReopenedForNewChild,
+  reorderSubtasks,
   subtaskProgress,
   suppressedChildUids,
 } from '../domain/subtasks';
@@ -288,6 +298,26 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   const [postponeDateTask, setPostponeDateTask] = useState<CalendarTask | null>(null);
   /** Parents whose subtasks are showing in the Day View list. */
   const [dayExpandedParents, setDayExpandedParents] = useState<Set<string>>(new Set());
+  /**
+   * A postponement waiting on one answer: move the parent's dated subtasks by
+   * the same number of days, or leave them where they are. Only ever set when
+   * there is something to ask about.
+   */
+  /**
+   * A subtask opened from its parent's form.
+   *
+   * Edited in a second form stacked over the first rather than by swapping
+   * what the first is editing: the parent's form stays mounted, so returning
+   * to it after saving shows exactly what was typed there, half-finished
+   * fields included.
+   */
+  const [editingSubtask, setEditingSubtask] = useState<CalendarTask | null>(null);
+  const [postponeSubtaskPrompt, setPostponeSubtaskPrompt] = useState<{
+    task: CalendarTask;
+    to: Date;
+    children: CalendarTask[];
+    days: number;
+  } | null>(null);
   const [showPlannerMenu, setShowPlannerMenu] = useState<boolean>(false);
   const [showCalendarMenu, setShowCalendarMenu] = useState<boolean>(false);
   const [showAppMenu, setShowAppMenu] = useState<boolean>(false);
@@ -2843,17 +2873,52 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
    * taskToCaldavItem projects dueDate onto the outbound VTODO's DUE, so
    * writing the one field is all that keeps the server in step.
    */
-  const handlePostponeTask = trackWorkspaceOperation(async (task: CalendarTask, to: Date) => {
-    const next = postponedTask(task, to);
-    calendarStorage.upsertTask(next);
+  const handlePostponeTask = trackWorkspaceOperation(async (
+    task: CalendarTask,
+    to: Date,
+    alsoMove: CalendarTask[] = []
+  ) => {
+    const written = [postponedTask(task, to), ...alsoMove];
+    for (const row of written) calendarStorage.upsertTask(row);
     setTasks([...calendarStorage.getTasks()]);
+
+    const [next] = written;
     const landed = to.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    setStatusMsg(`"${next.title}" moved to ${landed}.`);
-    const taskSyncError = await pushTaskToCaldav(next);
+    const withSteps = alsoMove.length
+      ? ` with ${alsoMove.length} subtask${alsoMove.length === 1 ? '' : 's'}`
+      : '';
+    setStatusMsg(`"${next.title}" moved to ${landed}${withSteps}.`);
+
+    const errors: string[] = [];
+    for (const row of written) {
+      const error = await pushTaskToCaldav(row);
+      if (error) errors.push(error);
+    }
     setTasks([...calendarStorage.getTasks()]);
-    await pushTaskAsEvent(next);
-    if (taskSyncError) setStatusMsg(`Moved "${next.title}" to ${landed} locally. CalDAV: ${taskSyncError}`);
+    for (const row of written) await pushTaskAsEvent(row);
+    if (errors.length) setStatusMsg(`Moved "${next.title}" to ${landed} locally. CalDAV: ${errors[0]}`);
   });
+
+  /**
+   * The single funnel for every postponement, whether the date came from a
+   * quick option or the picker.
+   *
+   * Asks about dated subtasks only when the task has some: a prompt on every
+   * postpone would tax the common case, which is a task with no subtasks at
+   * all. Undated subtasks are never in question — there is nothing to shift.
+   */
+  const requestPostponeTask = (task: CalendarTask, to: Date) => {
+    const children = task.dueDate
+      ? datedSubtasks(childrenOf(calendarStorage.getTasks(), task.uid))
+      : [];
+    const days = task.dueDate ? postponeDayDelta(new Date(task.dueDate), to) : 0;
+
+    if (children.length === 0 || days === 0) {
+      void handlePostponeTask(task, to);
+      return;
+    }
+    setPostponeSubtaskPrompt({ task, to, children, days });
+  };
 
   /**
    * Opens a task in the creation modal. The modal still speaks CalendarEvent,
@@ -2864,19 +2929,7 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     // offer Delete. Without it editingTask stays null and both are missing.
     setEditingTask(task);
     const due = task.dueDate ? new Date(task.dueDate) : undefined;
-    setEditingEvent({
-      uid: task.uid,
-      summary: `[TASK] ${task.title}`,
-      isTask: true,
-      completed: task.completed,
-      description: task.notes,
-      start: due ?? new Date(),
-      end: due ?? new Date(),
-      // An undated task opens as all-day; giving it a date is what moves it
-      // out of the No Date section.
-      allDay: !due || task.allDay !== false,
-      attendees: [],
-    });
+    setEditingEvent(taskAsFormEvent(task));
     setLassoDraftTitle('');
     setLassoDraftParsed(null);
     setLassoDraftDate(due ?? null);
@@ -4202,6 +4255,30 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     if (taskSyncError) setStatusMsg(`Added "${trimmed}" locally. CalDAV: ${taskSyncError}`);
   });
 
+  /**
+   * Moves a subtask within its parent's sequence.
+   *
+   * Local only: a VTODO has no standard property for position, so there is
+   * nothing to push and no server round trip to wait for. Arranging steps
+   * stays on this device.
+   */
+  const handleReorderSubtask = trackWorkspaceOperation(async (
+    task: CalendarTask,
+    direction: MoveDirection
+  ) => {
+    const stored = calendarStorage.getTasks();
+    const parentUid = displayParentId(task, indexByUid(stored));
+    if (!parentUid) return;
+
+    const written = reorderSubtasks(stored, parentUid, task.uid, direction);
+    if (written.length === 0) return;
+
+    for (const row of written) calendarStorage.upsertTask(row);
+    setTasks([...calendarStorage.getTasks()]);
+    void calendarStorage.flush();
+    setStatusMsg(`Moved "${task.title}" ${direction}.`);
+  });
+
   /** Puts a converted event back on the calendar, leaving the task alone. */
   const handleRestoreEvent = trackWorkspaceOperation(async (eventIdentity: string) => {
     calendarStorage.setMembership(eventIdentity, { taskifiedAs: undefined, taskifyDeclined: true });
@@ -4420,6 +4497,11 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
       completed: existing?.completed ?? false,
       completedAt: existing?.completedAt,
       parentId: existing?.parentId,
+      // The task is rebuilt from scratch here, so anything the form does not
+      // carry has to be read back off the stored one. Its arranged position
+      // among its siblings is not on the form and would otherwise reset to
+      // the bottom of the list every time the task was saved.
+      order: existing?.order,
       createdAt: existing?.createdAt ?? new Date(),
       notes: input.notes,
       priority: input.priority && input.priority > 1 ? input.priority : undefined,
@@ -6577,6 +6659,68 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
             </TouchableOpacity>
           </Modal>
 
+          {/* Asked only when the answer changes something: the task has
+              subtasks with deadlines of their own, and the parent actually
+              moved. Both buttons act; neither is a dead end. */}
+          <Modal visible={postponeSubtaskPrompt !== null} transparent animationType="fade">
+            <TouchableOpacity
+              style={styles.modalOverlay}
+              activeOpacity={1}
+              onPress={() => setPostponeSubtaskPrompt(null)}
+            >
+              <View style={styles.actionSheetContentCompact}>
+                <Text allowFontScaling={false} style={styles.actionSheetTitle} numberOfLines={2}>
+                  Move the subtasks too?
+                </Text>
+                <Text allowFontScaling={false} style={styles.checkSettingHint}>
+                  {postponeSubtaskPrompt
+                    ? `"${postponeSubtaskPrompt.task.title}" moves ${postponeSubtaskPrompt.days} day${
+                        postponeSubtaskPrompt.days === 1 ? '' : 's'
+                      }. It has ${postponeSubtaskPrompt.children.length} subtask${
+                        postponeSubtaskPrompt.children.length === 1 ? '' : 's'
+                      } with a deadline of their own.`
+                    : ''}
+                </Text>
+
+                <TouchableOpacity
+                  style={styles.actionSheetBtn}
+                  onPress={() => {
+                    const pending = postponeSubtaskPrompt;
+                    setPostponeSubtaskPrompt(null);
+                    if (pending) {
+                      void handlePostponeTask(
+                        pending.task,
+                        pending.to,
+                        postponedSubtasks(pending.children, pending.days)
+                      );
+                    }
+                  }}
+                >
+                  <Text allowFontScaling={false} style={styles.actionSheetBtnText}>
+                    Move them by the same {postponeSubtaskPrompt?.days === 1 ? 'day' : 'days'}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.actionSheetBtn}
+                  onPress={() => {
+                    const pending = postponeSubtaskPrompt;
+                    setPostponeSubtaskPrompt(null);
+                    if (pending) void handlePostponeTask(pending.task, pending.to);
+                  }}
+                >
+                  <Text allowFontScaling={false} style={styles.actionSheetBtnText}>
+                    Just this task
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.cancelBtn} onPress={() => setPostponeSubtaskPrompt(null)}>
+                  <Text allowFontScaling={false} style={styles.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
+          </Modal>
+
           {/* Quick Date Picker Overlay Modal */}
           <DatePickerModal
             visible={showDatePickerModal}
@@ -6597,7 +6741,7 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
               setPostponeDateTask(null);
               // The picker yields midnight; postponedToDay puts the task's own
               // time of day back on the chosen date.
-              if (task) void handlePostponeTask(task, postponedToDay(task, date).dueDate as Date);
+              if (task) requestPostponeTask(task, postponedToDay(task, date).dueDate as Date);
             }}
             onClose={() => setPostponeDateTask(null)}
           />
@@ -6697,6 +6841,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
             editingTask={editingTask}
             subtasks={editingTask ? childrenOf(tasks, editingTask.uid) : undefined}
             onToggleSubtask={handleToggleTask}
+            onReorderSubtask={(task, direction) => { void handleReorderSubtask(task, direction); }}
+            onEditSubtask={setEditingSubtask}
             onAddSubtaskHere={
               editingTask && canHaveChildren(editingTask, indexByUid(tasks))
                 ? (parent, title) => { void handleAddSubtask(parent, { title }); }
@@ -6741,6 +6887,51 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
             })()}
             onDeleteTask={uid => {
               const task = calendarStorage.getTasks().find(t => t.uid === uid);
+              if (task) requestDeleteTask(task);
+            }}
+          />
+
+          {/* A subtask opened from the form above, edited in its own instance
+              stacked over it. Saving here closes only this one, so the parent
+              form reappears exactly as it was left — anything typed into it
+              survives, which swapping the edited task in place could not do.
+              It is given no subtasks of its own: only one level nests. */}
+          <ItemCreationModal
+            visible={editingSubtask !== null}
+            type="task"
+            targetDate={editingSubtask?.dueDate ?? selectedDate}
+            weekStartsOn={weekStartsOn}
+            availableFeeds={calendarStorage.getSettings().feeds}
+            editingTask={editingSubtask}
+            editingEvent={editingSubtask ? taskAsFormEvent(editingSubtask) : null}
+            subtaskOf={
+              editingSubtask?.parentId
+                ? calendarStorage.getTasks().find(t => t.uid === editingSubtask.parentId)?.title
+                : undefined
+            }
+            onClose={() => setEditingSubtask(null)}
+            onCreateEvent={handleCreateNewEvent}
+            onCreateTask={handleCreateNewTask}
+            areas={areas}
+            taskAreaId={editingSubtask ? areaOfTask(editingSubtask.uid) : undefined}
+            onCreateArea={handleCreateArea}
+            projects={projects}
+            taskProjectId={editingSubtask ? projectOfTask(editingSubtask.uid) : undefined}
+            onCreateProject={handleCreateProject}
+            taskNotePath={editingSubtask ? calendarStorage.getMapping(editingSubtask.uid)?.notePath : undefined}
+            onLinkTaskNote={task => { void handleLinkExistingTaskNote(task); }}
+            onTaskNoteAction={(task, existingPath) => {
+              if (existingPath) {
+                setEditingSubtask(null);
+                setShowItemCreationModal(false);
+                void handleOpenExistingNote(existingPath);
+              } else {
+                handleRequestTaskNote(task);
+              }
+            }}
+            onDeleteTask={uid => {
+              const task = calendarStorage.getTasks().find(t => t.uid === uid);
+              setEditingSubtask(null);
               if (task) requestDeleteTask(task);
             }}
           />
@@ -7019,9 +7210,10 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                   handleRequestTaskNote(task);
                 }
               }}
-              onPostpone={(task, to) => { void handlePostponeTask(task, to); }}
+              onPostpone={(task, to) => requestPostponeTask(task, to)}
               onPickPostponeDate={setPostponeDateTask}
               onAddSubtask={(parent, draft) => { void handleAddSubtask(parent, draft); }}
+              onReorderSubtask={(task, direction) => { void handleReorderSubtask(task, direction); }}
               weekStartsOn={weekStartsOn}
             />
           )}

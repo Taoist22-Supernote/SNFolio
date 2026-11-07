@@ -1,6 +1,7 @@
 import {
   inferTaskCollectionUrl,
   taskBelongsToCollection,
+  taskAsFormEvent,
   taskFromCaldavItem,
   taskToCaldavItem,
 } from './taskSync';
@@ -94,5 +95,26 @@ describe('a parent link survives a round trip', () => {
     const pushedBack = taskToCaldavItem({ ...stored, completed: true });
 
     expect(pushedBack.parentUid).toBe('todo-parent');
+  });
+});
+
+describe('taskAsFormEvent', () => {
+  test('a dated task opens on its own due date', () => {
+    const due = new Date('2026-11-10T17:00:00');
+    const projected = taskAsFormEvent(subtaskTask({ dueDate: due, allDay: false }));
+
+    expect(projected.start).toEqual(due);
+    expect(projected.allDay).toBe(false);
+    expect(projected.summary).toBe('[TASK] Draft the appendix');
+    expect(projected.isTask).toBe(true);
+  });
+
+  test('an undated task opens as all-day, which is what No Date means here', () => {
+    const projected = taskAsFormEvent(subtaskTask());
+    expect(projected.allDay).toBe(true);
+  });
+
+  test('the uid is carried so a save overwrites rather than duplicating', () => {
+    expect(taskAsFormEvent(subtaskTask()).uid).toBe('todo-child');
   });
 });

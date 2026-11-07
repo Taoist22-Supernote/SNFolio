@@ -1,5 +1,5 @@
 import { CalendarTask } from './types';
-import { isDone, withStatus } from './taskModel';
+import { compareTasks, isDone, withStatus } from './taskModel';
 
 /**
  * Tasks hanging off other tasks.
@@ -62,10 +62,76 @@ export function displayParentId(
   return byUid.has(root) ? root : undefined;
 }
 
-/** The subtasks of one task, in the order the list already sorted them. */
+/** The subtasks of one task, in their manual order. */
 export function childrenOf(tasks: CalendarTask[], parentUid: string): CalendarTask[] {
   const byUid = indexByUid(tasks);
-  return tasks.filter(task => displayParentId(task, byUid) === parentUid);
+  return sortSubtasks(tasks.filter(task => displayParentId(task, byUid) === parentUid));
+}
+
+/**
+ * Subtasks in sequence.
+ *
+ * `order` wins here, unlike everywhere else: compareTasks puts priority and
+ * due date first, which is right for a list of independent tasks and wrong
+ * for the steps of one. A sequence that silently reshuffles itself by
+ * priority cannot be arranged at all.
+ *
+ * A subtask with no order of its own sorts after the arranged ones rather
+ * than at the front, and the first move gives every one an explicit position.
+ */
+export function sortSubtasks(children: CalendarTask[]): CalendarTask[] {
+  return [...children].sort((a, b) => {
+    const left = a.order ?? Number.POSITIVE_INFINITY;
+    const right = b.order ?? Number.POSITIVE_INFINITY;
+    if (left !== right) return left - right;
+    return compareTasks(a, b);
+  });
+}
+
+export type MoveDirection = 'up' | 'down';
+
+/** Whether a subtask can move that way, for disabling the control at the ends. */
+export function canMoveSubtask(
+  tasks: CalendarTask[],
+  parentUid: string,
+  uid: string,
+  direction: MoveDirection
+): boolean {
+  const children = childrenOf(tasks, parentUid);
+  const index = children.findIndex(child => child.uid === uid);
+  if (index === -1) return false;
+  return direction === 'up' ? index > 0 : index < children.length - 1;
+}
+
+/**
+ * The subtasks to write to move one up or down, or nothing if it cannot move.
+ *
+ * Every position is renumbered from zero, so a list that was partly unordered
+ * becomes a definite sequence after one move rather than carrying gaps and
+ * undefined values that the next move would have to guess about. Only the
+ * rows whose position actually changed are returned.
+ *
+ * Order is not sent to the server: a VTODO has no standard property for it,
+ * so inventing one would mean writing a field no other client reads.
+ */
+export function reorderSubtasks(
+  tasks: CalendarTask[],
+  parentUid: string,
+  uid: string,
+  direction: MoveDirection
+): CalendarTask[] {
+  const children = childrenOf(tasks, parentUid);
+  const index = children.findIndex(child => child.uid === uid);
+  const target = direction === 'up' ? index - 1 : index + 1;
+  if (index === -1 || target < 0 || target >= children.length) return [];
+
+  const moved = [...children];
+  moved[index] = children[target];
+  moved[target] = children[index];
+
+  return moved
+    .map((task, position) => ({ ...task, order: position }))
+    .filter(task => children.find(child => child.uid === task.uid)?.order !== task.order);
 }
 
 /** True when this task has subtasks within the given list. */

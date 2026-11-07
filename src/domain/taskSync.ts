@@ -72,3 +72,29 @@ export function taskFromCaldavItem(
   };
   return withStatus(base, item.completed ? 'done' : existing ? taskStatus(existing) === 'in-progress' ? 'in-progress' : 'todo' : 'todo');
 }
+
+/**
+ * A task in the shape the creation form speaks.
+ *
+ * The form was built for events and edits tasks by projecting them into that
+ * shape, diverting back to the task store on save by uid. Shared so that the
+ * screen and the form itself project a task identically — two slightly
+ * different projections of the same task is a bug waiting on a field nobody
+ * compares.
+ */
+export function taskAsFormEvent(task: CalendarTask): CalendarEvent {
+  const due = task.dueDate ? new Date(task.dueDate) : undefined;
+  return {
+    uid: task.uid,
+    summary: `[TASK] ${task.title}`,
+    isTask: true,
+    completed: task.completed,
+    description: task.notes,
+    start: due ?? new Date(),
+    end: due ?? new Date(),
+    // An undated task opens as all-day; giving it a date is what moves it out
+    // of the No Date section.
+    allDay: !due || task.allDay !== false,
+    attendees: [],
+  };
+}

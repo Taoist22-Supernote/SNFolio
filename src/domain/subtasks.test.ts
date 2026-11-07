@@ -6,7 +6,10 @@ import {
   hasChildren,
   indexByUid,
   expandRows,
+  canMoveSubtask,
   parentReopenedForNewChild,
+  reorderSubtasks,
+  sortSubtasks,
   suppressedChildUids,
   withoutNestedChildren,
   rootParentId,
@@ -195,5 +198,74 @@ describe('several sections at once', () => {
   test('a child is not suppressed when its parent is nowhere on screen', () => {
     const suppressed = suppressedChildUids(all, [childA, loner]);
     expect(suppressed.size).toBe(0);
+  });
+});
+
+describe('arranging subtasks', () => {
+  const step = (uid: string, over: Partial<CalendarTask> = {}): CalendarTask =>
+    task(uid, { parentId: 'p', ...over });
+
+  test('order wins over priority and due date, unlike elsewhere', () => {
+    // compareTasks would put the high-priority one first; a sequence that
+    // reshuffles itself by priority cannot be arranged at all.
+    const first = step('first', { order: 0, priority: 1 });
+    const second = step('second', { order: 1, priority: 4, dueDate: new Date('2026-11-01T09:00:00') });
+
+    expect(sortSubtasks([second, first]).map(t => t.uid)).toEqual(['first', 'second']);
+  });
+
+  test('an unarranged subtask sorts after the arranged ones', () => {
+    const arranged = step('arranged', { order: 0 });
+    const loose = step('loose');
+
+    expect(sortSubtasks([loose, arranged]).map(t => t.uid)).toEqual(['arranged', 'loose']);
+  });
+
+  test('moving one down swaps it with the next', () => {
+    const all = [parent, step('a', { order: 0 }), step('b', { order: 1 }), step('c', { order: 2 })];
+    const written = reorderSubtasks(all, 'p', 'a', 'down');
+
+    expect(written.map(t => [t.uid, t.order])).toEqual([['b', 0], ['a', 1]]);
+  });
+
+  test('moving one up swaps it with the one above', () => {
+    const all = [parent, step('a', { order: 0 }), step('b', { order: 1 })];
+    const written = reorderSubtasks(all, 'p', 'b', 'up');
+
+    expect(written.map(t => [t.uid, t.order])).toEqual([['b', 0], ['a', 1]]);
+  });
+
+  test('one move renumbers a partly unarranged list into a definite sequence', () => {
+    // Without renumbering, the next move would be guessing about gaps and
+    // undefined positions.
+    const all = [parent, step('a'), step('b'), step('c')];
+    const written = reorderSubtasks(all, 'p', 'c', 'up');
+
+    expect(written.map(t => [t.uid, t.order])).toEqual([['a', 0], ['c', 1], ['b', 2]]);
+  });
+
+  test('only the rows that actually moved are written', () => {
+    const all = [parent, step('a', { order: 0 }), step('b', { order: 1 }), step('c', { order: 2 })];
+    const written = reorderSubtasks(all, 'p', 'b', 'down');
+
+    expect(written.map(t => t.uid)).toEqual(['c', 'b']);
+  });
+
+  test('the ends refuse to move further, and say so in advance', () => {
+    const all = [parent, step('a', { order: 0 }), step('b', { order: 1 })];
+
+    expect(reorderSubtasks(all, 'p', 'a', 'up')).toEqual([]);
+    expect(reorderSubtasks(all, 'p', 'b', 'down')).toEqual([]);
+    expect(canMoveSubtask(all, 'p', 'a', 'up')).toBe(false);
+    expect(canMoveSubtask(all, 'p', 'a', 'down')).toBe(true);
+    expect(canMoveSubtask(all, 'p', 'b', 'up')).toBe(true);
+    expect(canMoveSubtask(all, 'p', 'b', 'down')).toBe(false);
+  });
+
+  test('a task that is not a subtask of that parent cannot be moved under it', () => {
+    const all = [parent, step('a', { order: 0 }), loner];
+
+    expect(reorderSubtasks(all, 'p', 'x', 'up')).toEqual([]);
+    expect(canMoveSubtask(all, 'p', 'x', 'down')).toBe(false);
   });
 });

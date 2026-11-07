@@ -1,4 +1,12 @@
-import { canPostpone, postponeOptions, postponedTask, postponedToDay } from './taskPostpone';
+import {
+  canPostpone,
+  datedSubtasks,
+  postponeDayDelta,
+  postponeOptions,
+  postponedSubtasks,
+  postponedTask,
+  postponedToDay,
+} from './taskPostpone';
 import { CalendarTask } from './types';
 
 // Local time throughout: a date-only string parses as UTC, which lands on the
@@ -120,5 +128,52 @@ describe('postponedToDay', () => {
     const moved = postponedToDay(task(), at('2026-12-24T00:00:00'));
 
     expect(moved.dueDate).toEqual(at('2026-12-24T00:00:00'));
+  });
+});
+
+describe('moving subtasks with their parent', () => {
+  const step = (uid: string, due?: string): CalendarTask => ({
+    uid,
+    title: uid,
+    completed: false,
+    createdAt: at('2026-11-01T09:00:00'),
+    parentId: 'p',
+    ...(due ? { dueDate: at(due) } : {}),
+  });
+
+  test('the delta is counted in calendar days', () => {
+    expect(postponeDayDelta(at('2026-11-06T17:00:00'), at('2026-11-13T17:00:00'))).toBe(7);
+    expect(postponeDayDelta(at('2026-11-06T17:00:00'), at('2026-11-07T09:00:00'))).toBe(1);
+    expect(postponeDayDelta(at('2026-11-06T17:00:00'), at('2026-11-06T23:00:00'))).toBe(0);
+  });
+
+  test('a shift across a daylight-saving boundary still moves whole days', () => {
+    // US DST ends 1 Nov 2026. Elapsed-millisecond arithmetic would land this
+    // a day short in a zone that observes it.
+    expect(postponeDayDelta(at('2026-10-28T09:00:00'), at('2026-11-04T09:00:00'))).toBe(7);
+  });
+
+  test('dated subtasks move by the same number of days, keeping their own times', () => {
+    const moved = postponedSubtasks([step('a', '2026-11-08T09:30:00'), step('b', '2026-11-10T17:00:00')], 7);
+
+    expect(moved.map(t => t.dueDate)).toEqual([at('2026-11-15T09:30:00'), at('2026-11-17T17:00:00')]);
+  });
+
+  test('the gaps between them survive, so a sequence stays a sequence', () => {
+    const moved = postponedSubtasks([step('a', '2026-11-08T09:00:00'), step('b', '2026-11-11T09:00:00')], 3);
+    const gap = (moved[1].dueDate as Date).getTime() - (moved[0].dueDate as Date).getTime();
+
+    expect(gap).toBe(3 * 86400000);
+  });
+
+  test('undated subtasks are left out rather than given their parent\'s date', () => {
+    // Dating work the user deliberately left undated would be a side effect
+    // of postponing something else.
+    expect(postponedSubtasks([step('a'), step('b', '2026-11-08T09:00:00')], 7).map(t => t.uid)).toEqual(['b']);
+    expect(datedSubtasks([step('a'), step('b', '2026-11-08T09:00:00')]).map(t => t.uid)).toEqual(['b']);
+  });
+
+  test('a move of zero days writes nothing', () => {
+    expect(postponedSubtasks([step('a', '2026-11-08T09:00:00')], 0)).toEqual([]);
   });
 });

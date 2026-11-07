@@ -43,6 +43,7 @@ function render(tasks: CalendarTask[], overrides: Partial<React.ComponentProps<t
     onPostpone: jest.fn(),
     onPickPostponeDate: jest.fn(),
     onAddSubtask: jest.fn(),
+    onReorderSubtask: jest.fn(),
     ...overrides,
   };
   let tree!: TestRenderer.ReactTestRenderer;
@@ -257,3 +258,70 @@ describe('subtasks on screen', () => {
     act(() => tree.unmount());
   });
 })
+
+describe('arranging subtasks on the Tasks tab', () => {
+  const par = dated({ uid: 'p', title: 'Write the paper' });
+  const first = dated({ uid: 'a', title: 'Step one', parentId: 'p', order: 0, dueDate: undefined });
+  const second = dated({ uid: 'b', title: 'Step two', parentId: 'p', order: 1, dueDate: undefined });
+
+  const arrow = (tree: TestRenderer.ReactTestRenderer, label: string) =>
+    tree.root.findAllByType(TouchableOpacity).find(node => node.props.accessibilityLabel === label);
+
+  test('no arrows until the subtasks are showing', () => {
+    const { tree } = render([par, first, second]);
+    expect(arrow(tree, 'Move Step one down')).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  test('the first step can only go down and the last only up', () => {
+    const { tree } = render([par, first, second]);
+    press(tree, '0/2');
+
+    expect(arrow(tree, 'Move Step one up')).toBeUndefined();
+    expect(arrow(tree, 'Move Step one down')).toBeDefined();
+    expect(arrow(tree, 'Move Step two up')).toBeDefined();
+    expect(arrow(tree, 'Move Step two down')).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  test('moving one reports the task and the direction', () => {
+    const { tree, props } = render([par, first, second]);
+    press(tree, '0/2');
+    act(() => arrow(tree, 'Move Step one down')!.props.onPress());
+
+    expect(props.onReorderSubtask).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: 'a' }),
+      'down'
+    );
+    act(() => tree.unmount());
+  });
+
+  test('a lone subtask has nothing to arrange', () => {
+    const { tree } = render([par, first]);
+    press(tree, '0/1');
+
+    expect(arrow(tree, 'Move Step one up')).toBeUndefined();
+    expect(arrow(tree, 'Move Step one down')).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  test('a top-level task is not offered them', () => {
+    const { tree } = render([par, first, second]);
+    press(tree, '0/2');
+
+    expect(arrow(tree, 'Move Write the paper up')).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  test('steps keep their arranged sequence even when priorities differ', () => {
+    // compareTasks would hoist the high-priority step; a sequence must not
+    // reshuffle itself.
+    const urgent = dated({ uid: 'b', title: 'Step two', parentId: 'p', order: 1, priority: 4, dueDate: undefined });
+    const { tree } = render([par, first, urgent]);
+    press(tree, '0/2');
+
+    const shown = textOf(tree);
+    expect(shown.indexOf('Step one')).toBeLessThan(shown.indexOf('Step two'));
+    act(() => tree.unmount());
+  });
+});

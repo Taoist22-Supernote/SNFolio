@@ -118,6 +118,46 @@ export function postponedTask(task: CalendarTask, to: Date): CalendarTask {
   return { ...task, dueDate: new Date(to) };
 }
 
+/**
+ * Whole days between two deadlines, counted on the calendar.
+ *
+ * Calendar days rather than elapsed milliseconds: across a daylight-saving
+ * boundary a week is 167 or 169 hours, and dividing by 24 would move a
+ * subtask a day off the one its parent moved to.
+ */
+export function postponeDayDelta(from: Date, to: Date): number {
+  const start = startOfDay(from).getTime();
+  const end = startOfDay(to).getTime();
+  // Round after dividing by a nominal day: the two values are both midnights,
+  // so any DST offset between them is an hour, not a day.
+  return Math.round((end - start) / 86400000);
+}
+
+/**
+ * Dated subtasks moved by the same number of days as their parent.
+ *
+ * Each keeps its own time of day and its own interval relative to the others,
+ * so a sequence stays a sequence. Undated subtasks are returned untouched and
+ * therefore excluded — there is no deadline to shift, and inventing one from
+ * the parent's would date work the user deliberately left undated.
+ */
+export function postponedSubtasks(children: CalendarTask[], days: number): CalendarTask[] {
+  if (days === 0) return [];
+  return children
+    .filter(child => child.dueDate && Number.isFinite(new Date(child.dueDate).getTime()))
+    .map(child => {
+      const due = new Date(child.dueDate as Date);
+      return { ...child, dueDate: sameTimeOn(addDays(due, days), due) };
+    });
+}
+
+/** Subtasks with a deadline of their own, which are the only ones a shift affects. */
+export function datedSubtasks(children: CalendarTask[]): CalendarTask[] {
+  return children.filter(
+    child => child.dueDate && Number.isFinite(new Date(child.dueDate).getTime())
+  );
+}
+
 /** Whether this task can be postponed at all, for deciding to show the control. */
 export function canPostpone(task: CalendarTask, now: Date = new Date()): boolean {
   return postponeOptions(task, now).length > 0;

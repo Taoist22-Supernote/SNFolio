@@ -1,6 +1,6 @@
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
-import { Text, TouchableOpacity } from 'react-native';
+import { Text, TouchableOpacity, View } from 'react-native';
 import { ItemCreationModal } from './ItemCreationModal';
 import { pickLinkedNote } from '../supernote/pickLinkedNote';
 import { HandwritingTextInput } from './HandwritingTextInput';
@@ -137,7 +137,7 @@ describe('subtasks on the task form', () => {
     const onAddSubtaskHere = jest.fn();
     const tree = renderForm({ subtasks: [], onAddSubtaskHere });
 
-    const add = button(tree, '＋ Add subtask');
+    const add = button(tree, '＋ Add');
     expect(add).toBeDefined();
     act(() => tree.root.findAllByType(HandwritingTextInput).slice(-1)[0].props.onChangeText('Find the citation'));
     act(() => add!.props.onPress());
@@ -151,9 +151,14 @@ describe('subtasks on the task form', () => {
 
   test('a subtask that cannot take subtasks is not offered the field', () => {
     // onAddSubtaskHere is withheld for a task that is itself a subtask.
+    // Asserted on the control, not the placeholder: a placeholder is a prop
+    // and would not show up in the rendered text either way.
     const tree = renderForm({ subtasks: [], onAddSubtaskHere: undefined });
 
-    expect(textOf(tree)).not.toContain('Add a subtask');
+    const add = tree.root.findAllByType(TouchableOpacity)
+      .find(node => node.props.accessibilityLabel === 'Add this subtask');
+    expect(add).toBeUndefined();
+    expect(textOf(tree)).not.toContain('Subtasks');
     act(() => tree.unmount());
   });
 
@@ -163,5 +168,296 @@ describe('subtasks on the task form', () => {
     expect(textOf(tree)).not.toContain('Subtasks');
     expect(textOf(tree)).not.toContain('Add a subtask');
     act(() => tree.unmount());
+  });
+});
+
+describe('arranging subtasks on the task form', () => {
+  const parentTask = {
+    uid: 'p', title: 'Write the paper', completed: false, createdAt: new Date(2026, 10, 1),
+  } as const;
+  const step = (uid: string, order: number) => ({
+    uid, title: `Step ${uid}`, completed: false, createdAt: new Date(2026, 10, 1), parentId: 'p', order,
+  });
+
+  const renderForm = (props: Record<string, unknown>) => {
+    let tree!: TestRenderer.ReactTestRenderer;
+    act(() => {
+      tree = TestRenderer.create(
+        <ItemCreationModal
+          visible type="task" targetDate={new Date(2026, 10, 6)} availableFeeds={[]}
+          onClose={jest.fn()} onCreateEvent={jest.fn()} onCreateTask={jest.fn()}
+          editingTask={parentTask as never}
+          {...props}
+        />
+      );
+    });
+    return tree;
+  };
+
+  const arrow = (tree: TestRenderer.ReactTestRenderer, label: string) =>
+    tree.root.findAllByType(TouchableOpacity).find(node => node.props.accessibilityLabel === label);
+
+  test('the ends are not offered a direction they cannot go', () => {
+    const tree = renderForm({
+      subtasks: [step('a', 0), step('b', 1), step('c', 2)],
+      onToggleSubtask: jest.fn(),
+      onReorderSubtask: jest.fn(),
+    });
+
+    expect(arrow(tree, 'Move Step a up')).toBeUndefined();
+    expect(arrow(tree, 'Move Step a down')).toBeDefined();
+    expect(arrow(tree, 'Move Step b up')).toBeDefined();
+    expect(arrow(tree, 'Move Step b down')).toBeDefined();
+    expect(arrow(tree, 'Move Step c up')).toBeDefined();
+    expect(arrow(tree, 'Move Step c down')).toBeUndefined();
+    act(() => tree.unmount());
+  });
+
+  test('moving a step from the form reports it', () => {
+    const onReorderSubtask = jest.fn();
+    const tree = renderForm({
+      subtasks: [step('a', 0), step('b', 1)],
+      onToggleSubtask: jest.fn(),
+      onReorderSubtask,
+    });
+
+    act(() => arrow(tree, 'Move Step b up')!.props.onPress());
+
+    expect(onReorderSubtask).toHaveBeenCalledWith(expect.objectContaining({ uid: 'b' }), 'up');
+    act(() => tree.unmount());
+  });
+
+  test('without a reorder handler no arrows are drawn', () => {
+    const tree = renderForm({
+      subtasks: [step('a', 0), step('b', 1)],
+      onToggleSubtask: jest.fn(),
+      onReorderSubtask: undefined,
+    });
+
+    expect(arrow(tree, 'Move Step a down')).toBeUndefined();
+    act(() => tree.unmount());
+  });
+});
+
+test('the subtask panel is not a child of the footer button row', () => {
+  // It was, which laid Save, the subtask list, the add field and Delete out
+  // side by side and squashed all four. A layout this wrong is invisible to
+  // a text assertion, so the guard is on the parent.
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    tree = TestRenderer.create(
+      <ItemCreationModal
+        visible type="task" targetDate={new Date(2026, 10, 6)} availableFeeds={[]}
+        onClose={jest.fn()} onCreateEvent={jest.fn()} onCreateTask={jest.fn()}
+        editingTask={{
+          uid: 'p', title: 'Write the paper', completed: false, createdAt: new Date(2026, 10, 1),
+        } as never}
+        subtasks={[{
+          uid: 'a', title: 'Step one', completed: false, createdAt: new Date(2026, 10, 1), parentId: 'p',
+        }] as never}
+        onToggleSubtask={jest.fn()}
+        onAddSubtaskHere={jest.fn()}
+      />
+    );
+  });
+
+  const flat = (node: TestRenderer.ReactTestInstance): Record<string, unknown> =>
+    Object.assign({}, ...[node.props.style].flat(Infinity).filter(Boolean));
+  const textIn = (node: TestRenderer.ReactTestInstance) =>
+    node.findAllByType(Text).map(n => [n.props.children].flat(Infinity).join('')).join('|');
+
+  const footer = tree.root.findAllByType(View).find(node => {
+    const style = flat(node);
+    return style.flexDirection === 'row' && style.flexWrap === 'wrap'
+      && textIn(node).includes('Save Task');
+  });
+
+  expect(footer).toBeDefined();
+  expect(textIn(footer!)).not.toContain('Subtasks');
+  expect(textIn(footer!)).not.toContain('Step one');
+  act(() => tree.unmount());
+});
+
+test('linking, saving and deleting share one row', () => {
+  // They were two rows, each using a third of the width it had.
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    tree = TestRenderer.create(
+      <ItemCreationModal
+        visible type="task" targetDate={new Date(2026, 10, 6)} availableFeeds={[]}
+        onClose={jest.fn()} onCreateEvent={jest.fn()} onCreateTask={jest.fn()}
+        editingTask={{
+          uid: 'p', title: 'Write the paper', completed: false, createdAt: new Date(2026, 10, 1),
+        } as never}
+        onDeleteTask={jest.fn()}
+        onTaskNoteAction={jest.fn()}
+      />
+    );
+  });
+
+  const flat = (node: TestRenderer.ReactTestInstance): Record<string, unknown> =>
+    Object.assign({}, ...[node.props.style].flat(Infinity).filter(Boolean));
+  const textIn = (node: TestRenderer.ReactTestInstance) =>
+    node.findAllByType(Text).map(n => [n.props.children].flat(Infinity).join('')).join('|');
+
+  const rows = tree.root.findAllByType(View)
+    .filter(node => flat(node).flexDirection === 'row' && flat(node).flexWrap === 'wrap');
+  const actionRow = rows.find(node => textIn(node).includes('Save Task'));
+
+  expect(actionRow).toBeDefined();
+  const shown = textIn(actionRow!);
+  expect(shown).toContain('Link Note / PDF…');
+  expect(shown).toContain('Create Note');
+  expect(shown).toContain('Save Task');
+  expect(shown).toContain('Delete');
+  act(() => tree.unmount());
+});
+
+describe('opening a subtask from its parent', () => {
+  const parentTask = {
+    uid: 'p', title: 'Write the paper', completed: false, createdAt: new Date(2026, 10, 1),
+  } as const;
+  const step = { uid: 'a', title: 'Step one', completed: false, createdAt: new Date(2026, 10, 1), parentId: 'p' };
+
+  const renderForm = (props: Record<string, unknown>) => {
+    let tree!: TestRenderer.ReactTestRenderer;
+    act(() => {
+      tree = TestRenderer.create(
+        <ItemCreationModal
+          visible type="task" targetDate={new Date(2026, 10, 6)} availableFeeds={[]}
+          onClose={jest.fn()} onCreateEvent={jest.fn()} onCreateTask={jest.fn()}
+          editingTask={parentTask as never}
+          subtasks={[step] as never}
+          onToggleSubtask={jest.fn()}
+          {...props}
+        />
+      );
+    });
+    return tree;
+  };
+
+  const control = (tree: TestRenderer.ReactTestRenderer, label: string) =>
+    tree.root.findAllByType(TouchableOpacity).find(node => node.props.accessibilityLabel === label);
+
+  test('its title opens it, as on every other task row', () => {
+    const onEditSubtask = jest.fn();
+    const tree = renderForm({ onEditSubtask });
+
+    const body = control(tree, 'Edit Step one');
+    expect(body).toBeDefined();
+    act(() => body!.props.onPress());
+
+    expect(onEditSubtask).toHaveBeenCalledWith(expect.objectContaining({ uid: 'a' }));
+    act(() => tree.unmount());
+  });
+
+  test('ticking it off is still a separate target from opening it', () => {
+    const onToggleSubtask = jest.fn();
+    const onEditSubtask = jest.fn();
+    const tree = renderForm({ onToggleSubtask, onEditSubtask });
+
+    act(() => control(tree, 'Complete Step one')!.props.onPress());
+
+    expect(onToggleSubtask).toHaveBeenCalledTimes(1);
+    expect(onEditSubtask).not.toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  test('without a handler the title is inert rather than falsely tappable', () => {
+    const tree = renderForm({ onEditSubtask: undefined });
+
+    expect(control(tree, 'Edit Step one')?.props.disabled).toBe(true);
+    act(() => tree.unmount());
+  });
+});
+
+test('Save is not sized to swallow the action row', () => {
+  // flexGrow made it three times the width of every other button on the row.
+  let tree!: TestRenderer.ReactTestRenderer;
+  act(() => {
+    tree = TestRenderer.create(
+      <ItemCreationModal
+        visible type="task" targetDate={new Date(2026, 10, 6)} availableFeeds={[]}
+        onClose={jest.fn()} onCreateEvent={jest.fn()} onCreateTask={jest.fn()}
+      />
+    );
+  });
+
+  const flat = (node: TestRenderer.ReactTestInstance): Record<string, unknown> =>
+    Object.assign({}, ...[node.props.style].flat(Infinity).filter(Boolean));
+  // Innermost match: the dismiss overlay wraps the whole form and carries
+  // flex: 1, so the first match would be the overlay rather than the button.
+  const save = tree.root.findAllByType(TouchableOpacity)
+    .filter(node => node.findAllByType(Text).some(t => [t.props.children].flat(Infinity).join('').includes('Save Task')))
+    .sort((a, b) => a.findAllByType(TouchableOpacity).length - b.findAllByType(TouchableOpacity).length)[0];
+
+  expect(save).toBeDefined();
+  expect(flat(save!).flexGrow).toBeUndefined();
+  expect(flat(save!).flex).toBeUndefined();
+  act(() => tree.unmount());
+});
+
+describe('the form says which thing it is editing', () => {
+  const render1 = (props: Record<string, unknown>) => {
+    let tree!: TestRenderer.ReactTestRenderer;
+    act(() => {
+      tree = TestRenderer.create(
+        <ItemCreationModal
+          visible type="task" targetDate={new Date(2026, 10, 6)} availableFeeds={[]}
+          onClose={jest.fn()} onCreateEvent={jest.fn()} onCreateTask={jest.fn()}
+          {...props}
+        />
+      );
+    });
+    return tree;
+  };
+  const textOf = (tree: TestRenderer.ReactTestRenderer) =>
+    tree.root.findAllByType(Text).map(n => [n.props.children].flat(Infinity).join('')).join('|');
+
+  const step = { uid: 'a', title: 'Step one', completed: false, createdAt: new Date(2026, 10, 1), parentId: 'p' };
+
+  test('a subtask is announced as one, with its parent named', () => {
+    // "Edit Task" over a subtask leaves the title field as the only clue to
+    // where you are — the very field you came to change.
+    const tree = render1({
+      editingTask: step as never,
+      editingEvent: { uid: 'a', summary: '[TASK] Step one', isTask: true, start: new Date(), end: new Date(), allDay: true, attendees: [] } as never,
+      subtaskOf: 'Write the paper',
+    });
+
+    const shown = textOf(tree);
+    expect(shown).toContain('Edit Subtask');
+    expect(shown).toContain('of "Write the paper"');
+    expect(shown).not.toContain('Edit Task');
+    act(() => tree.unmount());
+  });
+
+  test('leaving it reads as going back, not as closing the form', () => {
+    const tree = render1({
+      editingTask: step as never,
+      editingEvent: { uid: 'a', summary: '[TASK] Step one', isTask: true, start: new Date(), end: new Date(), allDay: true, attendees: [] } as never,
+      subtaskOf: 'Write the paper',
+    });
+
+    expect(textOf(tree)).toContain('‹ Back');
+    expect(textOf(tree)).not.toContain('✕ Close');
+    act(() => tree.unmount());
+  });
+
+  test('an ordinary task still says Edit Task and Close', () => {
+    const tree = render1({
+      editingTask: { uid: 'p', title: 'Write the paper', completed: false, createdAt: new Date() } as never,
+      editingEvent: { uid: 'p', summary: '[TASK] Write the paper', isTask: true, start: new Date(), end: new Date(), allDay: true, attendees: [] } as never,
+    });
+
+    const shown = textOf(tree);
+    expect(shown).toContain('Edit Task');
+    expect(shown).toContain('✕ Close');
+    expect(shown).not.toContain('Edit Subtask');
+    act(() => tree.unmount());
+  });
+
+  test('a new task says New Task', () => {
+    expect(textOf(render1({}))).toContain('New Task');
   });
 });

@@ -119,6 +119,16 @@ interface ItemCreationModalProps {
   subtasks?: CalendarTask[];
   onToggleSubtask?: (task: CalendarTask) => void;
   onAddSubtaskHere?: (parent: CalendarTask, title: string) => void;
+  /** Move a subtask within the sequence; `subtasks` is already in order. */
+  onReorderSubtask?: (task: CalendarTask, direction: 'up' | 'down') => void;
+  /** Open a subtask in this form, in place of its parent. */
+  onEditSubtask?: (task: CalendarTask) => void;
+  /**
+   * Set when this form is editing a subtask, to the parent's title. The form
+   * then says so: "Edit Task" over a subtask leaves the only clue to where
+   * you are in the title field, which is exactly the field you came to change.
+   */
+  subtaskOf?: string;
   /** Linked handwritten note for this task, if one exists. */
   taskNotePath?: string;
   eventNotePath?: string;
@@ -166,7 +176,7 @@ export function ItemCreationModal({
   onDeleteTask,
   onRestoreEvent,
   editingTask,
-  subtasks, onToggleSubtask, onAddSubtaskHere,
+  subtasks, onToggleSubtask, onAddSubtaskHere, onReorderSubtask, onEditSubtask, subtaskOf,
   taskNotePath, eventNotePath, onEventNoteAction, onLinkEventNote, onUnlinkNote,
   onTaskNoteAction,
   onLinkTaskNote,
@@ -457,12 +467,25 @@ export function ItemCreationModal({
       <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
         <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
           <View style={styles.modalHeader}>
-            {/* The same form both creates and edits, so it has to say which. */}
-            <Text allowFontScaling={false} style={styles.modalTitle}>
-              {`${editingEvent ? 'Edit' : 'New'} ${itemKind === 'event' ? 'Event' : 'Task'}`}
-            </Text>
+            {/* The same form creates, edits, and edits a subtask, so it has to
+                say which — and which parent, since a subtask is only
+                meaningful in relation to one. */}
+            <View style={styles.modalTitleGroup}>
+              <Text allowFontScaling={false} style={styles.modalTitle}>
+                {subtaskOf
+                  ? 'Edit Subtask'
+                  : `${editingEvent ? 'Edit' : 'New'} ${itemKind === 'event' ? 'Event' : 'Task'}`}
+              </Text>
+              {subtaskOf ? (
+                <Text allowFontScaling={false} style={styles.modalSubtitle} numberOfLines={1}>
+                  of "{subtaskOf}"
+                </Text>
+              ) : null}
+            </View>
             <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-              <Text allowFontScaling={false} style={styles.closeBtnText}>✕ Close</Text>
+              <Text allowFontScaling={false} style={styles.closeBtnText}>
+                {subtaskOf ? '‹ Back' : '✕ Close'}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -1155,10 +1178,108 @@ export function ItemCreationModal({
               numberOfLines={3}
             />
 
+            {/* Subtasks belong with this task's own fields, not in the footer
+                row beside Save — they are content, and that row lays its
+                children out side by side. The consequence of editing this
+                task is stated here because this is the form that does it. */}
+            {editingTask && ((subtasks && subtasks.length > 0) || onAddSubtaskHere) && (
+              <View style={styles.subtaskPanel}>
+                <Text allowFontScaling={false} style={styles.label}>
+                  {subtasks && subtasks.length > 0
+                    ? `Subtasks (${subtasks.filter(isDone).length}/${subtasks.length})`
+                    : 'Subtasks'}
+                </Text>
+
+                {(subtasks || []).map((subtask, index) => (
+                  <View key={subtask.uid} style={styles.subtaskRow}>
+                    <TouchableOpacity
+                      onPress={() => onToggleSubtask && onToggleSubtask(subtask)}
+                      accessibilityLabel={`${isDone(subtask) ? 'Reopen' : 'Complete'} ${subtask.title}`}
+                    >
+                      <Text allowFontScaling={false} style={styles.subtaskCheck}>
+                        {statusGlyph(taskStatus(subtask))}
+                      </Text>
+                    </TouchableOpacity>
+                    {/* The title opens the subtask, as it does on every other
+                        task row. Listing them with no way in made this a
+                        read-out rather than a place to work. */}
+                    <TouchableOpacity
+                      style={styles.subtaskBody}
+                      disabled={!onEditSubtask}
+                      onPress={() => onEditSubtask && onEditSubtask(subtask)}
+                      accessibilityLabel={`Edit ${subtask.title}`}
+                    >
+                      <Text
+                        allowFontScaling={false}
+                        numberOfLines={1}
+                        style={[styles.subtaskText, isDone(subtask) && styles.subtaskTextDone]}
+                      >
+                        {taskRowLabel(subtask, true)}
+                      </Text>
+                    </TouchableOpacity>
+                    {/* The list is already in sequence, so position alone
+                        decides which way a step can move. */}
+                    {onReorderSubtask && index > 0 && (
+                      <TouchableOpacity
+                        style={styles.subtaskMove}
+                        onPress={() => onReorderSubtask(subtask, 'up')}
+                        accessibilityLabel={`Move ${subtask.title} up`}
+                      >
+                        <Text allowFontScaling={false} style={styles.subtaskMoveText}>▲</Text>
+                      </TouchableOpacity>
+                    )}
+                    {onReorderSubtask && index < (subtasks || []).length - 1 && (
+                      <TouchableOpacity
+                        style={styles.subtaskMove}
+                        onPress={() => onReorderSubtask(subtask, 'down')}
+                        accessibilityLabel={`Move ${subtask.title} down`}
+                      >
+                        <Text allowFontScaling={false} style={styles.subtaskMoveText}>▼</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+
+                {onAddSubtaskHere && (
+                  <View style={styles.addSubtaskRow}>
+                    <HandwritingTextInput
+                      ref={input => { newSubtaskRef.current = input; }}
+                      style={[styles.textInput, styles.addSubtaskInput]}
+                      value={newSubtask}
+                      onChangeText={setNewSubtask}
+                      placeholder="Add a subtask"
+                      autoCorrect={false}
+                    />
+                    <TouchableOpacity
+                      style={styles.addSubtaskBtn}
+                      onPress={() => {
+                        // Read at press time: handwriting commits on blur.
+                        const typed = (newSubtaskRef.current?.getValue() ?? newSubtask).trim();
+                        if (!typed) return;
+                        setNewSubtask('');
+                        newSubtaskRef.current?.setValue('');
+                        onAddSubtaskHere(editingTask, typed);
+                      }}
+                      accessibilityLabel="Add this subtask"
+                    >
+                      <Text allowFontScaling={false} style={styles.addSubtaskBtnText}>＋ Add</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {subtasks && subtasks.length > 0 && (
+                  <Text allowFontScaling={false} style={styles.subtaskHint}>
+                    Completing this task completes its subtasks; reopening it reopens them.
+                  </Text>
+                )}
+              </View>
+            )}
+
           </ScrollView>
 
           {noteError ? <Text allowFontScaling={false} style={styles.label}>{noteError}</Text> : null}
-          <View style={styles.noteActionRow}>
+          {draftNote && <Text allowFontScaling={false} style={styles.label} numberOfLines={1}>Link on save: {draftNote.split('/').pop()}</Text>}
+          <View style={styles.actionRow}>
             <TouchableOpacity style={styles.taskNoteBtn} onPress={async () => {
               if (editingTask && onLinkTaskNote) { onLinkTaskNote(editingTask); return; }
               if (editingEvent && onLinkEventNote) { onLinkEventNote(editingEvent); return; }
@@ -1180,78 +1301,18 @@ export function ItemCreationModal({
               if (editingTask) onTaskNoteAction?.(editingTask, taskNotePath);
               else if (editingEvent) onEventNoteAction?.(editingEvent, eventNotePath);
             }}><Text allowFontScaling={false} style={styles.taskNoteBtnText}>{(taskNotePath || eventNotePath) ? openLinkedFileLabel(taskNotePath || eventNotePath) : 'Create Note'}</Text></TouchableOpacity>}
-          </View>
-          {draftNote && <Text allowFontScaling={false} style={styles.label} numberOfLines={1}>Link on save: {draftNote.split('/').pop()}</Text>}
-          <View style={styles.footerRow}>
+            {/* One row for every action that leaves this form: linking, saving
+                and deleting were two rows that each used a third of the width
+                they had. It wraps rather than squashing when a converted task
+                adds "Put the event back" to the set. */}
             <TouchableOpacity
-              style={[styles.saveBtn, itemKind === 'task' ? styles.compactTaskSave : styles.footerGrow]}
+              style={[styles.saveBtn, styles.actionRowItem, styles.saveBtnSized]}
               onPress={handleSave}
             >
               <Text allowFontScaling={false} style={styles.saveBtnText}>
                 💾 Save {itemKind === 'event' ? 'Event' : 'Task'}
               </Text>
             </TouchableOpacity>
-
-            {/* Subtasks, where the consequence of editing this task is
-                visible: finishing it finishes them, and that is worth saying
-                on the form that finishes it. Adding one here saves a trip to
-                the Tasks tab. */}
-            {editingTask && subtasks && subtasks.length > 0 && (
-              <View style={styles.subtaskPanel}>
-                <Text allowFontScaling={false} style={styles.label}>
-                  Subtasks ({subtasks.filter(isDone).length}/{subtasks.length})
-                </Text>
-                {subtasks.map(subtask => (
-                  <View key={subtask.uid} style={styles.subtaskRow}>
-                    <TouchableOpacity
-                      onPress={() => onToggleSubtask && onToggleSubtask(subtask)}
-                      accessibilityLabel={`${isDone(subtask) ? 'Reopen' : 'Complete'} ${subtask.title}`}
-                    >
-                      <Text allowFontScaling={false} style={styles.subtaskCheck}>
-                        {statusGlyph(taskStatus(subtask))}
-                      </Text>
-                    </TouchableOpacity>
-                    <Text
-                      allowFontScaling={false}
-                      numberOfLines={1}
-                      style={[styles.subtaskText, isDone(subtask) && styles.subtaskTextDone]}
-                    >
-                      {taskRowLabel(subtask, true)}
-                    </Text>
-                  </View>
-                ))}
-                <Text allowFontScaling={false} style={styles.subtaskHint}>
-                  Completing this task completes its subtasks; reopening it reopens them.
-                </Text>
-              </View>
-            )}
-
-            {editingTask && onAddSubtaskHere && (
-              <View style={styles.subtaskPanel}>
-                <Text allowFontScaling={false} style={styles.label}>Add a subtask</Text>
-                <HandwritingTextInput
-                  ref={input => { newSubtaskRef.current = input; }}
-                  style={styles.textInput}
-                  value={newSubtask}
-                  onChangeText={setNewSubtask}
-                  placeholder="What needs doing"
-                  autoCorrect={false}
-                />
-                <TouchableOpacity
-                  style={styles.addSubtaskBtn}
-                  onPress={() => {
-                    // Read at press time: handwriting commits on blur.
-                    const typed = (newSubtaskRef.current?.getValue() ?? newSubtask).trim();
-                    if (!typed) return;
-                    setNewSubtask('');
-                    newSubtaskRef.current?.setValue('');
-                    onAddSubtaskHere(editingTask, typed);
-                  }}
-                >
-                  <Text allowFontScaling={false} style={styles.addSubtaskBtnText}>＋ Add subtask</Text>
-                </TouchableOpacity>
-              </View>
-            )}
 
             {/* This task is standing in for a calendar item. Putting the item
                 back is the only way to undo that, so it belongs on the task. */}
@@ -1320,6 +1381,8 @@ const styles = StyleSheet.create({
     borderBottomColor: '#000000',
     paddingBottom: 6,
   },
+  modalTitleGroup: { flex: 1, marginRight: 8 },
+  modalSubtitle: { fontSize: 11, color: '#505050' },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
@@ -1553,15 +1616,18 @@ const styles = StyleSheet.create({
   stateChipTextSelected: {
     color: '#ffffff',
   },
-  footerRow: {
+  // Every action that leaves the form, on one line. Wraps instead of
+  // squashing: five buttons do not fit a Nomad's width.
+  actionRow: {
     flexDirection: 'row',
-    alignItems: 'stretch',
+    flexWrap: 'wrap',
+    alignItems: 'center',
   },
-  footerGrow: {
-    flex: 1,
-  },
-  noteActionRow: { flexDirection: 'row', marginBottom: 8 },
-  compactTaskSave: { paddingHorizontal: 20, paddingVertical: 8, justifyContent: 'center' },
+  actionRowItem: { marginTop: 6 },
+  // Sized by its own padding, like every other button on the row. flexGrow
+  // made it swallow all the leftover space and come out three times their
+  // size — prominence is not worth a row that looks broken.
+  saveBtnSized: { paddingHorizontal: 16, paddingVertical: 12, justifyContent: 'center' },
   taskNoteBtn: {
     borderWidth: 2,
     borderColor: '#000000',
@@ -1569,6 +1635,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     marginRight: 7,
+    marginTop: 6,
     justifyContent: 'center',
   },
   taskNoteBtnText: { fontSize: 12, fontWeight: 'bold', color: '#000000' },
@@ -1580,6 +1647,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     justifyContent: 'center',
     marginLeft: 8,
+    marginTop: 6,
     backgroundColor: '#ffffff',
   },
   deleteTaskBtnText: {
@@ -1644,17 +1712,31 @@ const styles = StyleSheet.create({
   },
   subtaskRow: { flexDirection: 'row', alignItems: 'center', minHeight: 40 },
   subtaskCheck: { fontSize: 16, color: '#000000', marginRight: 8 },
-  subtaskText: { flex: 1, fontSize: 13, color: '#000000' },
+  subtaskBody: { flex: 1, justifyContent: 'center', minHeight: 40 },
+  subtaskText: { fontSize: 13, color: '#000000' },
   subtaskTextDone: { textDecorationLine: 'line-through', color: '#606060' },
   subtaskHint: { fontSize: 11, lineHeight: 15, color: '#505050', marginTop: 4 },
+  subtaskMove: {
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: 7,
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 6,
+    marginLeft: 4,
+  },
+  subtaskMoveText: { fontSize: 12, fontWeight: 'bold', color: '#000000' },
+  addSubtaskRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
+  addSubtaskInput: { flex: 1, marginTop: 0, marginBottom: 0 },
   addSubtaskBtn: {
     minHeight: 44,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 12,
     borderWidth: 2,
     borderColor: '#000000',
     borderRadius: 6,
-    marginTop: 6,
+    marginLeft: 6,
   },
   addSubtaskBtnText: { fontSize: 13, fontWeight: 'bold', color: '#000000' },
   saveBtnText: {
