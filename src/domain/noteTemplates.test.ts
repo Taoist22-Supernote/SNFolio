@@ -8,6 +8,9 @@ import {
   parseSystemTemplates,
   templateCandidates,
   templateLabel,
+  noteCreateMode,
+  recognitionApplies,
+  recognitionSettingKey,
   resolveNoteDestination,
   templateSettingKey,
 } from './noteTemplates';
@@ -250,5 +253,27 @@ describe('appendPageTemplate', () => {
     expect(appendPageTemplate('style_college_ruled')).toBe('style_college_ruled');
     expect(appendPageTemplate('/MyStyle/grid.png')).toBe('/MyStyle/grid.png');
     expect(appendPageTemplate('')).toBe('');
+  });
+});
+
+describe('recognition notebooks', () => {
+  test('each note kind has its own recognition setting', () => {
+    expect(recognitionSettingKey('meeting')).toBe('meetingRecognition');
+    expect(recognitionSettingKey('class')).toBe('classRecognition');
+    expect(recognitionSettingKey('daily')).toBe('dailyNoteRecognition');
+  });
+
+  test('mode 1 is the recognition layout, 0 a standard note', () => {
+    expect(noteCreateMode(true)).toBe(1);
+    expect(noteCreateMode(false)).toBe(0);
+    expect(noteCreateMode(undefined)).toBe(0);
+  });
+
+  test('the choice does not apply to a .note template, which is copied whole', () => {
+    // copyFile duplicates the template, so the copy is whatever the template
+    // was and createNote's mode never reaches the device.
+    expect(recognitionApplies('/storage/emulated/0/Note/Templates/Class.note')).toBe(false);
+    expect(recognitionApplies('style_8mm_ruled_line')).toBe(true);
+    expect(recognitionApplies('/storage/emulated/0/Pictures/grid.png')).toBe(true);
   });
 });

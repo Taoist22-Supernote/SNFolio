@@ -467,3 +467,56 @@ describe('a .note template is copied, not drawn under', () => {
     expect(FileUtils.copyFile).not.toHaveBeenCalled();
   });
 });
+
+describe('recognition notebooks', () => {
+  test('a daily note set to recognition is created with mode 1', async () => {
+    (PluginFileAPI.createNote as jest.Mock).mockClear()
+      .mockResolvedValue({ success: true, result: true });
+
+    await meetingNoteService.createDailyNote(
+      '/storage/emulated/0/Note/Daily Notes/2026-11-06.note',
+      {
+        ...calendarStorage.getSettings(),
+        dailyNoteTemplate: 'style_8mm_ruled_line',
+        dailyNoteRecognition: true,
+      }
+    );
+
+    const [args] = (PluginFileAPI.createNote as jest.Mock).mock.calls[0];
+    expect(args.mode).toBe(1);
+  });
+
+  test('the same note left standard is created with mode 0', async () => {
+    (PluginFileAPI.createNote as jest.Mock).mockClear()
+      .mockResolvedValue({ success: true, result: true });
+
+    await meetingNoteService.createDailyNote(
+      '/storage/emulated/0/Note/Daily Notes/2026-11-07.note',
+      {
+        ...calendarStorage.getSettings(),
+        dailyNoteTemplate: 'style_8mm_ruled_line',
+        dailyNoteRecognition: false,
+      }
+    );
+
+    const [args] = (PluginFileAPI.createNote as jest.Mock).mock.calls[0];
+    expect(args.mode).toBe(0);
+  });
+
+  test('a task note carries its own recognition setting', async () => {
+    (PluginFileAPI.createNote as jest.Mock).mockClear()
+      .mockResolvedValue({ success: true, result: true });
+    (PluginFileAPI.getNoteTotalPageNum as jest.Mock).mockResolvedValue({ success: false });
+
+    await meetingNoteService.createTaskNote(
+      { uid: 'task-rtr', title: 'Read chapter 3', createdAt: new Date() } as any,
+      'Chapter 3.note',
+      '/storage/emulated/0/Note/Task Notes',
+      'style_8mm_ruled_line',
+      true
+    );
+
+    const [args] = (PluginFileAPI.createNote as jest.Mock).mock.calls[0];
+    expect(args.mode).toBe(1);
+  });
+});

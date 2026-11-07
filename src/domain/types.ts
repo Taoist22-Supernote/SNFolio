@@ -398,6 +398,27 @@ export interface CalendarSettings {
   /** Defaults used by notes linked directly to tasks. */
   taskNotesDirectory?: string;
   taskNoteTemplate?: string;
+  /**
+   * Whether a new note of this kind is created as a Real-Time Recognition
+   * notebook rather than a standard one.
+   *
+   * createNote takes a `mode`: 0 is a normal note, 1 is the recognition
+   * layout, which is a different kind of notebook rather than a different
+   * background — the device converts handwriting to text as you write, and
+   * getNoteType reports which one a file is. The choice is fixed when the file
+   * is created and cannot be changed afterwards, so it belongs with the
+   * template rather than in the note itself.
+   *
+   * Per kind, because the right answer differs: class notes you want
+   * searchable, a journal page you may not. Absent means standard.
+   *
+   * A .note template is copied rather than generated, so the copy keeps
+   * whatever the template was and this setting does not apply to it.
+   */
+  dailyNoteRecognition?: boolean;
+  meetingRecognition?: boolean;
+  classRecognition?: boolean;
+  taskNoteRecognition?: boolean;
   /** Whether Create Note initially selects its Project/Area rather than its standard folder. */
   routeEventNotesToPara?: boolean;
   /** PARA project cards the user collapsed to one line. */

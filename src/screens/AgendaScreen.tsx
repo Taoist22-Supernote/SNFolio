@@ -59,6 +59,8 @@ import {
   ICON_CHOICES,
   resolveNoteDestination,
   isNoteTemplate,
+  recognitionApplies,
+  recognitionSettingKey,
   templateLabel,
   templateSettingKey,
 } from '../domain/noteTemplates';
@@ -2034,6 +2036,31 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   };
 
   /**
+   * Whether new notes of this kind are Real-Time Recognition notebooks.
+   *
+   * A note's type is fixed when the file is created, so this is a setting
+   * rather than something togglable on an existing note.
+   */
+  const noteRecognitionFor = (kind: ConfigurableNoteKind): boolean => {
+    const settings = calendarStorage.getSettings();
+    void templateRevision;
+    if (kind === 'task') return Boolean(settings.taskNoteRecognition);
+    return Boolean(settings[recognitionSettingKey(kind)]);
+  };
+
+  const setNoteRecognition = (kind: ConfigurableNoteKind, value: boolean) => {
+    calendarStorage.updateSettings(kind === 'task'
+      ? { taskNoteRecognition: value }
+      : { [recognitionSettingKey(kind)]: value });
+    setTemplateRevision(n => n + 1);
+    setStatusMsg(
+      value
+        ? `New ${kind} notes will be Real-Time Recognition notebooks.`
+        : `New ${kind} notes will be standard notebooks.`
+    );
+  };
+
+  /**
    * Folder picker per note kind. The device's own browser is the only picker
    * available — the SDK exposes no folder-creation call of its own — so if it
    * cannot make a folder, ensureDirectory creates the chosen path anyway.
@@ -3817,7 +3844,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
       task,
       name,
       folder,
-      settings.taskNoteTemplate || DEFAULT_SYSTEM_TEMPLATE
+      settings.taskNoteTemplate || DEFAULT_SYSTEM_TEMPLATE,
+      settings.taskNoteRecognition
     );
     if (!result.success) {
       setStatusMsg(`Could not create task note: ${result.error || 'unknown error'}`);
@@ -3952,7 +3980,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     const result = await meetingNoteService.createProjectNote(
       safeNoteName,
       folder,
-      item.template || kindTemplate
+      item.template || kindTemplate,
+      noteKind === 'class' ? settings.classRecognition : settings.meetingRecognition
     );
     if (!result.success || !result.notePath) {
       setStatusMsg(`Could not create the note: ${result.error || 'unknown error'}`);
@@ -5036,6 +5065,73 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                 Note Template
               </Text>
 
+              {/* A note's type is decided by createNote and can never be
+                  changed afterwards, so it belongs next to the template —
+                  the one place the user is already deciding what a new note
+                  of this kind will be. Event Types carry no note type, so
+                  this is offered only for the per-kind settings. */}
+              {templatePickerKind !== null && (
+                <View style={styles.noteTypeCard}>
+                  <Text allowFontScaling={false} style={styles.compactNoteLabel}>Note Type</Text>
+                  {recognitionApplies(noteTemplateFor(templatePickerKind)) ? (
+                    <>
+                      <View style={styles.noteLocationPolicyRow}>
+                        <TouchableOpacity
+                          style={[
+                            styles.noteLocationPolicy,
+                            !noteRecognitionFor(templatePickerKind) && styles.noteLocationPolicySelected,
+                          ]}
+                          onPress={() => setNoteRecognition(templatePickerKind, false)}
+                        >
+                          <Text
+                            allowFontScaling={false}
+                            style={[
+                              styles.noteLocationPolicyText,
+                              !noteRecognitionFor(templatePickerKind) && styles.noteLocationPolicyTextSelected,
+                            ]}
+                          >
+                            Standard
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.noteLocationPolicy,
+                            noteRecognitionFor(templatePickerKind) && styles.noteLocationPolicySelected,
+                          ]}
+                          onPress={() => setNoteRecognition(templatePickerKind, true)}
+                        >
+                          <Text
+                            allowFontScaling={false}
+                            style={[
+                              styles.noteLocationPolicyText,
+                              noteRecognitionFor(templatePickerKind) && styles.noteLocationPolicyTextSelected,
+                            ]}
+                          >
+                            Real-Time Recognition
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                      {/* What the device actually does, measured on a Manta
+                          2026-11-06: your writing stays handwriting on the
+                          page. The note gains a recognition icon that opens a
+                          Recognition Results page offering Re-recognize,
+                          Queue and Export — the text leaves only by export.
+                          It is not converted in place as you write. */}
+                      <Text allowFontScaling={false} style={styles.checkSettingHint}>
+                        {noteRecognitionFor(templatePickerKind)
+                          ? 'You still write by hand. The note gains a Recognition Results page — re-recognize, queue, or export the text from there. Fixed when the note is created.'
+                          : 'An ordinary notebook, with no Recognition Results page. Lasso handwriting to convert it whenever you want.'}
+                      </Text>
+                    </>
+                  ) : (
+                    <Text allowFontScaling={false} style={styles.checkSettingHint}>
+                      A .note template is copied whole, so the new note is whatever the template
+                      is. Choose a built-in or a .png background to set the note type here.
+                    </Text>
+                  )}
+                </View>
+              )}
+
               <ScrollView style={styles.templateScroll} keyboardShouldPersistTaps="handled">
                 {systemTemplates.length === 0 && (
                   <Text allowFontScaling={false} style={styles.bodyTextCenter}>
@@ -5687,18 +5783,23 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                 keeps its strokes, layers and titles. A .note stores its page size, so make it on
                 the device you use; one made on another model will not fit. Recurring notebooks
                 template their first page and continue on the default ruling.
+                Tap a template to choose it, and to make that kind's new notes Real-Time
+                Recognition notebooks — ⚡ marks the kinds set that way.
               </Text>
               {CONFIGURABLE_NOTE_KINDS.map(kind => {
                 const label = kind === 'daily' ? 'Daily' : kind === 'class' ? 'Class' : kind === 'task' ? 'Task' : 'Meeting';
                 const value = noteTemplateFor(kind);
                 const folder = noteFolderFor(kind);
+                const recognition = noteRecognitionFor(kind) && recognitionApplies(value);
                 return (
                   <View key={kind} style={styles.compactNoteRow}>
                     <Text allowFontScaling={false} style={styles.compactNoteLabel}>{label}</Text>
                     <TouchableOpacity style={styles.compactChoice} onPress={() => setTemplatePickerKind(kind)}>
                       <Text allowFontScaling={false} style={styles.compactChoiceText} numberOfLines={1}>
-                        {/* A notebook is copied whole; an image is drawn under. */}
-                        {isNoteTemplate(value) ? '📓' : '🎨'} {templateLabel(value)}
+                        {/* A notebook is copied whole; an image is drawn under,
+                            and ⚡ marks a kind whose new notes recognize as
+                            they are written. The help text above decodes it. */}
+                        {recognition ? '⚡' : ''}{isNoteTemplate(value) ? '📓' : '🎨'} {templateLabel(value)}
                       </Text>
                     </TouchableOpacity>
                     <HandwritingTextInput
@@ -7680,6 +7781,13 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 10,
     marginTop: 10,
+  },
+  noteTypeCard: {
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 6,
+    padding: 8,
+    marginBottom: 8,
   },
   paraNoteRoutingHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
   paraNoteRoutingCopy: { flex: 1, marginRight: 12 },

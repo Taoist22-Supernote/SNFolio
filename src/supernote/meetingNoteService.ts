@@ -7,6 +7,7 @@ import {
   appendPageTemplate,
   DEFAULT_SYSTEM_TEMPLATE,
   isNoteTemplate,
+  noteCreateMode,
   resolveNoteDestination,
   parseSystemTemplates,
   SystemTemplate,
@@ -129,7 +130,13 @@ export class MeetingNoteService {
   private async createNoteWithTemplate(
     notePath: string,
     templateValue: string,
-    isPortrait = true
+    isPortrait = true,
+    /**
+     * Create it as a Real-Time Recognition notebook. Fixed at creation — no
+     * API converts a note afterwards — and irrelevant to a .note template,
+     * which is copied rather than generated.
+     */
+    recognition = false
   ): Promise<{ success: boolean; usedTemplate?: string; error?: string }> {
     // A .note is a notebook to duplicate, not a background to draw under.
     if (isNoteTemplate(templateValue)) {
@@ -144,7 +151,7 @@ export class MeetingNoteService {
         const res: any = await PluginFileAPI.createNote({
           notePath,
           template: candidate,
-          mode: 0,
+          mode: noteCreateMode(recognition),
           isPortrait,
         });
         // APIResponse.success only means the native call completed. The note
@@ -183,7 +190,9 @@ export class MeetingNoteService {
       // A journal page wants its own background, not the meeting-note one.
       const createRes = await this.createNoteWithTemplate(
         notePath,
-        settings.dailyNoteTemplate || DEFAULT_SYSTEM_TEMPLATE
+        settings.dailyNoteTemplate || DEFAULT_SYSTEM_TEMPLATE,
+        true,
+        settings.dailyNoteRecognition
       );
 
       if (!createRes.success) {
@@ -213,7 +222,8 @@ export class MeetingNoteService {
   async createProjectNote(
     projectName: string,
     folder: string,
-    template: string
+    template: string,
+    recognition = false
   ): Promise<{ success: boolean; notePath?: string; error?: string }> {
     const dir = folder || '/storage/emulated/0/Note';
     if (!(await this.ensureDirectory(dir))) {
@@ -223,7 +233,12 @@ export class MeetingNoteService {
     const safe = projectName.replace(/[/\\?%*:|"<>]/g, '').replace(/\s+/g, ' ').trim() || 'Project';
     const notePath = `${dir}/${safe}.note`;
 
-    const res = await this.createNoteWithTemplate(notePath, template || DEFAULT_SYSTEM_TEMPLATE);
+    const res = await this.createNoteWithTemplate(
+      notePath,
+      template || DEFAULT_SYSTEM_TEMPLATE,
+      true,
+      recognition
+    );
     return res.success ? { success: true, notePath } : { success: false, error: res.error };
   }
 
@@ -232,7 +247,8 @@ export class MeetingNoteService {
     task: CalendarTask,
     noteName: string,
     folder: string,
-    template: string
+    template: string,
+    recognition = false
   ): Promise<{ success: boolean; notePath: string; error?: string }> {
     const notePath = `${folder.replace(/\/+$/, '')}/${safeNoteFilename(noteName)}`;
     if (!(await this.ensureDirectory(folder))) {
@@ -243,7 +259,12 @@ export class MeetingNoteService {
       if (notePageCount(existing) !== undefined) {
         return { success: false, notePath, error: `${safeNoteFilename(noteName)} already exists in this folder.` };
       }
-      const created = await this.createNoteWithTemplate(notePath, template || DEFAULT_SYSTEM_TEMPLATE);
+      const created = await this.createNoteWithTemplate(
+        notePath,
+        template || DEFAULT_SYSTEM_TEMPLATE,
+        true,
+        recognition
+      );
       if (!created.success) return { success: false, notePath, error: created.error };
       calendarStorage.setMapping({
         eventUid: task.uid,
@@ -285,6 +306,9 @@ export class MeetingNoteService {
     });
 
     const templateValue = destination.template;
+    // The kind decides this the same way it decides the template. An Event
+    // Type overrides folder and background only; it carries no note type.
+    const recognition = kind === 'class' ? settings.classRecognition : settings.meetingRecognition;
 
     const isRecurringSeries = Boolean(event.recurringSeriesId && !forceNewFile && !perSession);
     const filename = noteName
@@ -353,7 +377,12 @@ export class MeetingNoteService {
       } else {
         // File does not exist -> Create new note file
         isNewFile = true;
-        const createRes = await this.createNoteWithTemplate(notePath, templateValue);
+        const createRes = await this.createNoteWithTemplate(
+          notePath,
+          templateValue,
+          true,
+          recognition
+        );
 
         if (!createRes.success) {
           return {

@@ -70,6 +70,12 @@ const DEFAULT_SETTINGS: CalendarSettings = {
   classNotesDirectory: '/storage/emulated/0/Note/Classes',
   taskNotesDirectory: '/storage/emulated/0/Note/Task Notes',
   taskNoteTemplate: DEFAULT_SYSTEM_TEMPLATE,
+  // Standard notebooks by default. Real-Time Recognition is a different kind
+  // of note, fixed when the file is created, so it is opt-in per kind.
+  meetingRecognition: false,
+  classRecognition: false,
+  dailyNoteRecognition: false,
+  taskNoteRecognition: false,
   routeEventNotesToPara: false,
   autoBackupEnabled: true,
   meetingParaSubpath: 'Meetings',

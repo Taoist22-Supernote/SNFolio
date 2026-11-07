@@ -60,7 +60,8 @@ export function validateWorkspaceData(data: any): asserts data is WorkspaceData 
   // Older installations retain removed settings because load merges saved data
   // over defaults. Keep their original types valid without reviving the features.
   const booleans = ['hideAllDayEvents', 'hideSoloEvents', 'caldavEnabled', 'taskCaldavEnabled',
-    'taskCaldavLocalEnrollmentDone', 'pushTasksAsEvents', 'routeEventNotesToPara', 'eventAreaOverridesMigrated', 'restoreSyncPaused', 'floatingLauncherEnabled', 'autoBackupEnabled', 'showScreenTimings'];
+    'taskCaldavLocalEnrollmentDone', 'pushTasksAsEvents', 'routeEventNotesToPara', 'eventAreaOverridesMigrated', 'restoreSyncPaused', 'floatingLauncherEnabled', 'autoBackupEnabled', 'showScreenTimings',
+    'meetingRecognition', 'classRecognition', 'dailyNoteRecognition', 'taskNoteRecognition'];
   const numbers = ['scheduleStartHour', 'scheduleEndHour', 'weekStartsOn', 'calendarWeekLength'];
   for (const [key, value] of Object.entries(settings)) {
     if (key === 'feeds') continue;
