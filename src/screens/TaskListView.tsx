@@ -1,8 +1,9 @@
 import { isPdfPath, LinkedFileMarker } from './LinkedFileMarker';
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Area, CalendarTask, Project } from '../domain/types';
 import { statusGlyph, taskRowLabel, taskStatus } from '../domain/taskModel';
+import { canPostpone, postponeOptions } from '../domain/taskPostpone';
 import {
   TASK_GROUPINGS,
   TASK_SCOPES,
@@ -32,6 +33,10 @@ interface TaskListViewProps {
   notePathFor: (uid: string) => string | undefined;
   onLinkNote?: (task: CalendarTask) => void;
   onNoteAction: (task: CalendarTask, existingPath?: string) => void;
+  /** Move a task's deadline to a date already chosen. */
+  onPostpone?: (task: CalendarTask, to: Date) => void;
+  /** Hand the task to the app's date picker for an arbitrary date. */
+  onPickPostponeDate?: (task: CalendarTask) => void;
 }
 
 /**
@@ -54,8 +59,12 @@ export function TaskListView({
   notePathFor,
   onNoteAction,
   onLinkNote,
+  onPostpone,
+  onPickPostponeDate,
 }: TaskListViewProps): React.JSX.Element {
   const [scope, setScope] = useState<TaskScope>('open');
+  /** The task whose deadline is being moved, while the chooser is open. */
+  const [postponing, setPostponing] = useState<CalendarTask | null>(null);
   const [grouping, setGrouping] = useState<TaskGrouping>('due');
   const [areaId, setAreaId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -283,6 +292,20 @@ export function TaskListView({
                         </Text>
                       </TouchableOpacity>
 
+                      {/* Pushing a deadline out was five presses through the
+                          edit form, which is why it never got used. Offered
+                          only where it means something: a dated, unfinished
+                          task. */}
+                      {onPostpone && canPostpone(task) && (
+                        <TouchableOpacity
+                          style={styles.noteButton}
+                          onPress={() => setPostponing(task)}
+                          accessibilityLabel={`Postpone ${task.title}`}
+                        >
+                          <Text allowFontScaling={false} style={styles.noteButtonText}>⏭ Later</Text>
+                        </TouchableOpacity>
+                      )}
+
                       {!notePath && onLinkNote && (
                         <TouchableOpacity style={styles.noteButton} onPress={() => onLinkNote(task)}>
                           <Text allowFontScaling={false} style={styles.noteButtonText}>Link Note / PDF</Text>
@@ -304,6 +327,69 @@ export function TaskListView({
               ))
             )}
           </ScrollView>
+
+      {/* Each option says where it lands, so a tap is never a guess about
+          what "next week" meant from an overdue date. */}
+      <Modal visible={postponing !== null} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.postponeOverlay}
+          activeOpacity={1}
+          onPress={() => setPostponing(null)}
+        >
+          <View style={styles.postponeSheet}>
+            <Text allowFontScaling={false} style={styles.postponeTitle} numberOfLines={2}>
+              Move "{postponing?.title}"
+            </Text>
+            {postponing?.dueDate && (
+              <Text allowFontScaling={false} style={styles.postponeCurrent}>
+                Due {new Date(postponing.dueDate).toLocaleDateString('en-US', {
+                  weekday: 'short',
+                  month: 'short',
+                  day: 'numeric',
+                })}
+              </Text>
+            )}
+
+            {(postponing ? postponeOptions(postponing) : []).map(option => (
+              <TouchableOpacity
+                key={option.id}
+                style={styles.postponeOption}
+                onPress={() => {
+                  const task = postponing;
+                  setPostponing(null);
+                  if (task && onPostpone) onPostpone(task, option.date);
+                }}
+              >
+                <Text allowFontScaling={false} style={styles.postponeOptionText}>
+                  {option.label}
+                </Text>
+                <Text allowFontScaling={false} style={styles.postponeOptionDate}>
+                  {option.dateLabel}
+                </Text>
+              </TouchableOpacity>
+            ))}
+
+            {onPickPostponeDate && (
+              <TouchableOpacity
+                style={styles.postponeOption}
+                onPress={() => {
+                  const task = postponing;
+                  setPostponing(null);
+                  if (task) onPickPostponeDate(task);
+                }}
+              >
+                <Text allowFontScaling={false} style={styles.postponeOptionText}>
+                  Pick a date...
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity style={styles.postponeCancel} onPress={() => setPostponing(null)}>
+              <Text allowFontScaling={false} style={styles.postponeCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -380,4 +466,40 @@ const styles = StyleSheet.create({
   },
   noteButtonText: { fontSize: 11, fontWeight: 'bold', color: '#000000' },
   empty: { fontSize: 13, color: '#505050', textAlign: 'center', paddingVertical: 20 },
+  postponeOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  postponeSheet: {
+    width: '70%',
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 8,
+    padding: 12,
+  },
+  postponeTitle: { fontSize: 14, fontWeight: 'bold', color: '#000000' },
+  postponeCurrent: { fontSize: 11, color: '#505050', marginTop: 2, marginBottom: 6 },
+  postponeOption: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    minHeight: 44,
+    paddingHorizontal: 10,
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 6,
+    marginTop: 6,
+  },
+  postponeOptionText: { fontSize: 13, fontWeight: 'bold', color: '#000000' },
+  postponeOptionDate: { fontSize: 12, color: '#303030' },
+  postponeCancel: {
+    minHeight: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  postponeCancelText: { fontSize: 12, fontWeight: 'bold', color: '#505050' },
 });

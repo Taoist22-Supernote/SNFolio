@@ -153,6 +153,7 @@ import { hourLabel } from '../domain/dayGrid';
 import { ItemCreationModal } from './ItemCreationModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { DatePickerModal } from './DatePickerModal';
+import { postponedToDay, postponedTask } from '../domain/taskPostpone';
 import { deleteFileWithCompanions, listParaFolderEntries, moveFileToFolder, moveParaFolder, openNoteInEditor, openResourceFile, ParaFolderEntry, renameFileInPlace } from '../supernote/exportService';
 import {
   ensureFileReadPermission,
@@ -273,6 +274,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
 
   // Modals & Popups (Defaults to FALSE on launch)
   const [showDatePickerModal, setShowDatePickerModal] = useState<boolean>(false);
+  /** Task waiting on an arbitrary date from the picker, if any. */
+  const [postponeDateTask, setPostponeDateTask] = useState<CalendarTask | null>(null);
   const [showPlannerMenu, setShowPlannerMenu] = useState<boolean>(false);
   const [showCalendarMenu, setShowCalendarMenu] = useState<boolean>(false);
   const [showAppMenu, setShowAppMenu] = useState<boolean>(false);
@@ -2790,6 +2793,24 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     setTasks([...calendarStorage.getTasks()]);
     await pushTaskAsEvent(next);
     if (taskSyncError) setStatusMsg(`Updated "${next.title}" locally. CalDAV: ${taskSyncError}`);
+  });
+
+  /**
+   * Moves a task's deadline and syncs it, the same way ticking one off does.
+   *
+   * taskToCaldavItem projects dueDate onto the outbound VTODO's DUE, so
+   * writing the one field is all that keeps the server in step.
+   */
+  const handlePostponeTask = trackWorkspaceOperation(async (task: CalendarTask, to: Date) => {
+    const next = postponedTask(task, to);
+    calendarStorage.upsertTask(next);
+    setTasks([...calendarStorage.getTasks()]);
+    const landed = to.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    setStatusMsg(`"${next.title}" moved to ${landed}.`);
+    const taskSyncError = await pushTaskToCaldav(next);
+    setTasks([...calendarStorage.getTasks()]);
+    await pushTaskAsEvent(next);
+    if (taskSyncError) setStatusMsg(`Moved "${next.title}" to ${landed} locally. CalDAV: ${taskSyncError}`);
   });
 
   /**
@@ -6470,6 +6491,22 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
             onClose={() => setShowDatePickerModal(false)}
           />
 
+          {/* A second instance, because the one above is bound to the date the
+              app is navigated to; moving a deadline must not move the view. */}
+          <DatePickerModal
+            visible={postponeDateTask !== null}
+            value={postponeDateTask?.dueDate ? new Date(postponeDateTask.dueDate) : selectedDate}
+            weekStartsOn={weekStartsOn}
+            onSelect={date => {
+              const task = postponeDateTask;
+              setPostponeDateTask(null);
+              // The picker yields midnight; postponedToDay puts the task's own
+              // time of day back on the chosen date.
+              if (task) void handlePostponeTask(task, postponedToDay(task, date).dueDate as Date);
+            }}
+            onClose={() => setPostponeDateTask(null)}
+          />
+
 
           {/* Item Creation Modal (Events & Tasks) */}
           <EventDetailsModal
@@ -6880,6 +6917,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                   handleRequestTaskNote(task);
                 }
               }}
+              onPostpone={(task, to) => { void handlePostponeTask(task, to); }}
+              onPickPostponeDate={setPostponeDateTask}
             />
           )}
 
