@@ -796,3 +796,34 @@ test('one pass over a month is far less work than expanding cell by cell', () =>
   expect(atOnce).toBeGreaterThan(0);
   expect(atOnce).toBeLessThan(perCell);
 });
+
+describe('VTODO parent links', () => {
+  const todo = (relatedTo: string) => [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'BEGIN:VTODO',
+    'UID:child-1',
+    'SUMMARY:Draft the appendix',
+    'DUE:20261110T170000Z',
+    relatedTo,
+    'END:VTODO',
+    'END:VCALENDAR',
+  ].join('\r\n');
+
+  test('an explicit PARENT reltype names the parent', () => {
+    const [item] = parseIcsContent(todo('RELATED-TO;RELTYPE=PARENT:parent-1'));
+    expect(item.parentUid).toBe('parent-1');
+  });
+
+  test('RELTYPE defaults to PARENT when the server omits it', () => {
+    const [item] = parseIcsContent(todo('RELATED-TO:parent-1'));
+    expect(item.parentUid).toBe('parent-1');
+  });
+
+  test('SIBLING and CHILD say nothing about this task\'s own parent', () => {
+    // A CHILD relation points the other way; treating it as a parent would
+    // nest the wrong task inside the wrong one.
+    expect(parseIcsContent(todo('RELATED-TO;RELTYPE=SIBLING:other-1'))[0].parentUid).toBeUndefined();
+    expect(parseIcsContent(todo('RELATED-TO;RELTYPE=CHILD:other-1'))[0].parentUid).toBeUndefined();
+  });
+});

@@ -3,6 +3,7 @@ import TestRenderer, { act } from 'react-test-renderer';
 import { Text, TouchableOpacity } from 'react-native';
 import { ItemCreationModal } from './ItemCreationModal';
 import { pickLinkedNote } from '../supernote/pickLinkedNote';
+import { HandwritingTextInput } from './HandwritingTextInput';
 jest.mock('../supernote/pickLinkedNote', () => ({ pickLinkedNote: jest.fn() }));
 
 function button(tree: TestRenderer.ReactTestRenderer, label: string) {
@@ -64,4 +65,103 @@ test.each(['none', 'class', 'meeting'] as const)('event saves explicit %s calend
   act(() => save.props.onPress());
   expect(create.mock.calls[0][6]).toBe(designation);
   act(() => tree.unmount());
+});
+
+describe('subtasks on the task form', () => {
+  const parentTask = {
+    uid: 'p', title: 'Write the paper', completed: false, createdAt: new Date(2026, 10, 1),
+    dueDate: new Date(2026, 10, 6),
+  } as const;
+  const sub = (uid: string, over: Record<string, unknown> = {}) => ({
+    uid, title: `Step ${uid}`, completed: false, createdAt: new Date(2026, 10, 1), parentId: 'p', ...over,
+  });
+
+  const renderForm = (props: Record<string, unknown> = {}) => {
+    let tree!: TestRenderer.ReactTestRenderer;
+    act(() => {
+      tree = TestRenderer.create(
+        <ItemCreationModal
+          visible
+          type="task"
+          targetDate={new Date(2026, 10, 6)}
+          availableFeeds={[]}
+          onClose={jest.fn()}
+          onCreateEvent={jest.fn()}
+          onCreateTask={jest.fn()}
+          editingTask={parentTask as never}
+          {...props}
+        />
+      );
+    });
+    return tree;
+  };
+
+  const textOf = (tree: TestRenderer.ReactTestRenderer) =>
+    tree.root.findAllByType(Text).map(n => [n.props.children].flat(Infinity).join('')).join('|');
+
+  test('the form lists the subtasks and how many are done', () => {
+    const tree = renderForm({
+      subtasks: [sub('a'), sub('b', { completed: true, status: 'done' })],
+      onToggleSubtask: jest.fn(),
+    });
+
+    const shown = textOf(tree);
+    expect(shown).toContain('Subtasks (1/2)');
+    expect(shown).toContain('Step a');
+    expect(shown).toContain('Step b');
+    act(() => tree.unmount());
+  });
+
+  test('it says what finishing this task will do to them', () => {
+    // The cascade is the reason subtasks belong on this form at all.
+    const tree = renderForm({ subtasks: [sub('a')], onToggleSubtask: jest.fn() });
+
+    expect(textOf(tree)).toContain('Completing this task completes its subtasks; reopening it reopens them.');
+    act(() => tree.unmount());
+  });
+
+  test('a subtask can be ticked off from here', () => {
+    const onToggleSubtask = jest.fn();
+    const tree = renderForm({ subtasks: [sub('a')], onToggleSubtask });
+
+    const check = tree.root.findAllByType(TouchableOpacity)
+      .find(node => node.props.accessibilityLabel === 'Complete Step a');
+    expect(check).toBeDefined();
+    act(() => check!.props.onPress());
+
+    expect(onToggleSubtask).toHaveBeenCalledWith(expect.objectContaining({ uid: 'a' }));
+    act(() => tree.unmount());
+  });
+
+  test('another subtask can be added without leaving the form', () => {
+    const onAddSubtaskHere = jest.fn();
+    const tree = renderForm({ subtasks: [], onAddSubtaskHere });
+
+    const add = button(tree, '＋ Add subtask');
+    expect(add).toBeDefined();
+    act(() => tree.root.findAllByType(HandwritingTextInput).slice(-1)[0].props.onChangeText('Find the citation'));
+    act(() => add!.props.onPress());
+
+    expect(onAddSubtaskHere).toHaveBeenCalledWith(
+      expect.objectContaining({ uid: 'p' }),
+      'Find the citation'
+    );
+    act(() => tree.unmount());
+  });
+
+  test('a subtask that cannot take subtasks is not offered the field', () => {
+    // onAddSubtaskHere is withheld for a task that is itself a subtask.
+    const tree = renderForm({ subtasks: [], onAddSubtaskHere: undefined });
+
+    expect(textOf(tree)).not.toContain('Add a subtask');
+    act(() => tree.unmount());
+  });
+
+  test('a brand new task shows no subtask panel at all', () => {
+    const tree = renderForm({ editingTask: null, subtasks: [sub('a')], onAddSubtaskHere: jest.fn() });
+
+    expect(textOf(tree)).not.toContain('Subtasks');
+    expect(textOf(tree)).not.toContain('Add a subtask');
+    act(() => tree.unmount());
+  });
 });

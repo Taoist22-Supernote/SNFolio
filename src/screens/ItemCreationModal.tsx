@@ -25,9 +25,11 @@ import {
 import {
   TASK_PRIORITIES,
   TASK_STATUSES,
+  isDone,
   priorityLabel,
   statusGlyph,
   statusLabel,
+  taskRowLabel,
   taskStatus,
 } from '../domain/taskModel';
 import { areaIsDerived } from '../domain/membership';
@@ -109,6 +111,14 @@ interface ItemCreationModalProps {
    * while the real values sit elsewhere.
    */
   editingTask?: CalendarTask | null;
+  /**
+   * The subtasks of the task being edited, with what they need to be acted
+   * on here. Absent while creating, since nothing can hang off a task that
+   * does not exist yet.
+   */
+  subtasks?: CalendarTask[];
+  onToggleSubtask?: (task: CalendarTask) => void;
+  onAddSubtaskHere?: (parent: CalendarTask, title: string) => void;
   /** Linked handwritten note for this task, if one exists. */
   taskNotePath?: string;
   eventNotePath?: string;
@@ -156,6 +166,7 @@ export function ItemCreationModal({
   onDeleteTask,
   onRestoreEvent,
   editingTask,
+  subtasks, onToggleSubtask, onAddSubtaskHere,
   taskNotePath, eventNotePath, onEventNoteAction, onLinkEventNote, onUnlinkNote,
   onTaskNoteAction,
   onLinkTaskNote,
@@ -178,6 +189,8 @@ export function ItemCreationModal({
   useEffect(() => { if (visible) { setDraftNote(undefined); setNoteError(''); } }, [visible]);
   const [title, setTitle] = useState<string>('');
   const titleInputRef = useRef<HandwritingTextInputHandle>(null);
+  const newSubtaskRef = useRef<HandwritingTextInputHandle | null>(null);
+  const [newSubtask, setNewSubtask] = useState<string>('');
 
   // The caller's `type` is only the starting point — the user picks Event or
   // Task in the modal, which decides whether it becomes a calendar event or
@@ -1179,6 +1192,67 @@ export function ItemCreationModal({
               </Text>
             </TouchableOpacity>
 
+            {/* Subtasks, where the consequence of editing this task is
+                visible: finishing it finishes them, and that is worth saying
+                on the form that finishes it. Adding one here saves a trip to
+                the Tasks tab. */}
+            {editingTask && subtasks && subtasks.length > 0 && (
+              <View style={styles.subtaskPanel}>
+                <Text allowFontScaling={false} style={styles.label}>
+                  Subtasks ({subtasks.filter(isDone).length}/{subtasks.length})
+                </Text>
+                {subtasks.map(subtask => (
+                  <View key={subtask.uid} style={styles.subtaskRow}>
+                    <TouchableOpacity
+                      onPress={() => onToggleSubtask && onToggleSubtask(subtask)}
+                      accessibilityLabel={`${isDone(subtask) ? 'Reopen' : 'Complete'} ${subtask.title}`}
+                    >
+                      <Text allowFontScaling={false} style={styles.subtaskCheck}>
+                        {statusGlyph(taskStatus(subtask))}
+                      </Text>
+                    </TouchableOpacity>
+                    <Text
+                      allowFontScaling={false}
+                      numberOfLines={1}
+                      style={[styles.subtaskText, isDone(subtask) && styles.subtaskTextDone]}
+                    >
+                      {taskRowLabel(subtask, true)}
+                    </Text>
+                  </View>
+                ))}
+                <Text allowFontScaling={false} style={styles.subtaskHint}>
+                  Completing this task completes its subtasks; reopening it reopens them.
+                </Text>
+              </View>
+            )}
+
+            {editingTask && onAddSubtaskHere && (
+              <View style={styles.subtaskPanel}>
+                <Text allowFontScaling={false} style={styles.label}>Add a subtask</Text>
+                <HandwritingTextInput
+                  ref={input => { newSubtaskRef.current = input; }}
+                  style={styles.textInput}
+                  value={newSubtask}
+                  onChangeText={setNewSubtask}
+                  placeholder="What needs doing"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity
+                  style={styles.addSubtaskBtn}
+                  onPress={() => {
+                    // Read at press time: handwriting commits on blur.
+                    const typed = (newSubtaskRef.current?.getValue() ?? newSubtask).trim();
+                    if (!typed) return;
+                    setNewSubtask('');
+                    newSubtaskRef.current?.setValue('');
+                    onAddSubtaskHere(editingTask, typed);
+                  }}
+                >
+                  <Text allowFontScaling={false} style={styles.addSubtaskBtnText}>＋ Add subtask</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {/* This task is standing in for a calendar item. Putting the item
                 back is the only way to undo that, so it belongs on the task. */}
             {editingTask && onRestoreEvent && (
@@ -1561,6 +1635,28 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
   },
+  subtaskPanel: {
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 6,
+    padding: 8,
+    marginTop: 10,
+  },
+  subtaskRow: { flexDirection: 'row', alignItems: 'center', minHeight: 40 },
+  subtaskCheck: { fontSize: 16, color: '#000000', marginRight: 8 },
+  subtaskText: { flex: 1, fontSize: 13, color: '#000000' },
+  subtaskTextDone: { textDecorationLine: 'line-through', color: '#606060' },
+  subtaskHint: { fontSize: 11, lineHeight: 15, color: '#505050', marginTop: 4 },
+  addSubtaskBtn: {
+    minHeight: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 6,
+    marginTop: 6,
+  },
+  addSubtaskBtnText: { fontSize: 13, fontWeight: 'bold', color: '#000000' },
   saveBtnText: {
     color: '#ffffff',
     fontWeight: 'bold',

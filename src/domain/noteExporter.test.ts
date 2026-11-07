@@ -242,3 +242,26 @@ describe('noteExporter', () => {
     expect(ics).not.toContain('EXDATE:');
   });
 });
+
+describe('a subtask keeps its parent through a push', () => {
+  const child: CalendarEvent = {
+    uid: 'todo-child',
+    summary: 'Draft the appendix',
+    start: new Date('2026-11-10T17:00:00Z'),
+    end: new Date('2026-11-10T17:30:00Z'),
+    allDay: false,
+    attendees: [],
+    isTask: true,
+    parentUid: 'todo-parent',
+  };
+
+  test('RELATED-TO is emitted with an explicit PARENT reltype', () => {
+    expect(generateOutboundIcsTodo(child)).toContain('RELATED-TO;RELTYPE=PARENT:todo-parent');
+  });
+
+  test('a task with no parent emits no RELATED-TO at all', () => {
+    const { parentUid, ...orphan } = child;
+    void parentUid;
+    expect(generateOutboundIcsTodo(orphan as CalendarEvent)).not.toContain('RELATED-TO');
+  });
+});

@@ -388,6 +388,9 @@ export function parseIcsContent(icsData: string, calendarName = 'Calendar', diag
           allDay: currentEvent.allDay || false,
           isTask: componentKind === 'VTODO',
           undatedTask: componentKind === 'VTODO' && !currentEvent.start,
+          // Only a VTODO has a parent task. A VEVENT's RELATED-TO means
+          // something else entirely and is not carried here.
+          parentUid: componentKind === 'VTODO' ? currentEvent.parentUid : undefined,
           completed: currentEvent.completed,
           priority: currentEvent.priority,
           organizer: currentEvent.organizer,
@@ -453,6 +456,20 @@ export function parseIcsContent(icsData: string, calendarName = 'Calendar', diag
       case 'LOCATION':
         currentEvent.location = unescapeIcsValue(propVal);
         break;
+      case 'RELATED-TO': {
+        // How a VTODO names its parent (RFC 5545 §3.8.4.5). RELTYPE defaults
+        // to PARENT when absent, which is the form servers send for subtasks;
+        // SIBLING and CHILD say nothing about this task's own parent, so they
+        // are left alone rather than guessed at.
+        const reltype = propNameAndParams.match(/(?:^|;)RELTYPE=([^;:]+)/i)?.[1]
+          ?.replace(/^"|"$/g, '')
+          .toUpperCase();
+        if (!reltype || reltype === 'PARENT') {
+          const parent = unescapeIcsValue(propVal).trim();
+          if (parent) currentEvent.parentUid = parent;
+        }
+        break;
+      }
       case 'CATEGORIES':
         // A list separated by unescaped commas; the property may also repeat.
         currentEvent.categories = [

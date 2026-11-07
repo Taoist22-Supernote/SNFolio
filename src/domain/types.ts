@@ -279,6 +279,12 @@ export interface CalendarEvent {
   priority?: TaskPriority;
   /** A VTODO without DUE; start/end are compatibility placeholders only. */
   undatedTask?: boolean;
+  /**
+   * The VTODO this one hangs off, from RELATED-TO with RELTYPE PARENT or
+   * absent. Carried on the event shape because tasks travel through it on the
+   * way to and from the server.
+   */
+  parentUid?: string;
   rrule?: string;
   recurringSeriesId?: string;
   exceptionDates?: string[];

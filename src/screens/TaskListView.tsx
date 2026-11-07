@@ -1,9 +1,18 @@
 import { isPdfPath, LinkedFileMarker } from './LinkedFileMarker';
-import React, { useState } from 'react';
+import { HandwritingTextInput, HandwritingTextInputHandle } from './HandwritingTextInput';
+import { DatePickerModal } from './DatePickerModal';
+import React, { useRef, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Area, CalendarTask, Project } from '../domain/types';
+import { Area, CalendarTask, Project, TaskPriority } from '../domain/types';
 import { statusGlyph, taskRowLabel, taskStatus } from '../domain/taskModel';
 import { canPostpone, postponeOptions } from '../domain/taskPostpone';
+import {
+  canHaveChildren,
+  expandRows,
+  indexByUid,
+  subtaskProgress,
+  withoutNestedChildren,
+} from '../domain/subtasks';
 import {
   TASK_GROUPINGS,
   TASK_SCOPES,
@@ -21,6 +30,13 @@ import {
   scopeLabel,
 } from '../domain/taskListView';
 
+/** A subtask as described before it exists. */
+export interface SubtaskDraft {
+  title: string;
+  dueDate?: Date;
+  priority?: TaskPriority;
+}
+
 interface TaskListViewProps {
   tasks: CalendarTask[];
   areas: Area[];
@@ -35,6 +51,9 @@ interface TaskListViewProps {
   onNoteAction: (task: CalendarTask, existingPath?: string) => void;
   /** Move a task's deadline to a date already chosen. */
   onPostpone?: (task: CalendarTask, to: Date) => void;
+  /** Hang a new subtask off a top-level task. */
+  onAddSubtask?: (parent: CalendarTask, draft: SubtaskDraft) => void;
+  weekStartsOn?: number;
   /** Hand the task to the app's date picker for an arbitrary date. */
   onPickPostponeDate?: (task: CalendarTask) => void;
 }
@@ -61,10 +80,22 @@ export function TaskListView({
   onLinkNote,
   onPostpone,
   onPickPostponeDate,
+  onAddSubtask,
+  weekStartsOn = 0,
 }: TaskListViewProps): React.JSX.Element {
   const [scope, setScope] = useState<TaskScope>('open');
   /** The task whose deadline is being moved, while the chooser is open. */
   const [postponing, setPostponing] = useState<CalendarTask | null>(null);
+  /** The task gaining a subtask, while its name is being typed. */
+  const [namingSubtaskFor, setNamingSubtaskFor] = useState<CalendarTask | null>(null);
+  const [subtaskDraft, setSubtaskDraft] = useState<string>('');
+  const [subtaskDue, setSubtaskDue] = useState<Date | null>(null);
+  const [subtaskPriority, setSubtaskPriority] = useState<TaskPriority | undefined>(undefined);
+  const [pickingSubtaskDate, setPickingSubtaskDate] = useState<boolean>(false);
+  const subtaskInputRef = useRef<HandwritingTextInputHandle | null>(null);
+  /** Parents whose subtasks are showing. Collapsed is the default: a parent
+   *  with eight steps would otherwise bury everything below it. */
+  const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
   const [grouping, setGrouping] = useState<TaskGrouping>('due');
   const [areaId, setAreaId] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -84,7 +115,17 @@ export function TaskListView({
     projectLookup
   );
 
-  const groups = groupTasks(scoped, grouping, new Date(), lookup, projectLookup);
+  // Subtasks follow their parent, not their own date, so they are taken out
+  // before grouping; expandRows puts them back under the parent they belong
+  // to, wherever that row lands.
+  const byUid = indexByUid(tasks);
+  const groups = groupTasks(
+    withoutNestedChildren(tasks, scoped),
+    grouping,
+    new Date(),
+    lookup,
+    projectLookup
+  );
   const total = countGrouped(groups);
 
   /**
@@ -272,10 +313,16 @@ export function TaskListView({
                     </Text>
                   ) : null}
 
-                  {group.tasks.map(task => {
+                  {expandRows(tasks, group.tasks, expandedParents).map(({ task, depth }) => {
                     const notePath = notePathFor(task.uid);
+                    // Counted across every task, not just the ones this filter
+                    // shows: with Open selected, a parent whose completed
+                    // subtask is hidden would otherwise read 0/1 and deny that
+                    // the finished one exists.
+                    const progress = depth === 0 ? subtaskProgress(tasks, task.uid) : undefined;
+                    const expanded = expandedParents.has(task.uid);
                     return (
-                    <View key={task.uid} style={styles.row}>
+                    <View key={task.uid} style={[styles.row, depth === 1 && styles.rowNested]}>
                       <TouchableOpacity onPress={() => onToggle(task)} style={styles.check}>
                         <Text allowFontScaling={false} style={styles.checkText}>
                           {statusGlyph(taskStatus(task))}
@@ -291,6 +338,43 @@ export function TaskListView({
                           <LinkedFileMarker item={task} />{taskRowLabel(task, true)}
                         </Text>
                       </TouchableOpacity>
+
+                      {/* The count is the control: a number alone told you
+                          subtasks existed without giving you any way to see
+                          them. */}
+                      {progress && (
+                        <TouchableOpacity
+                          style={styles.progressButton}
+                          onPress={() => setExpandedParents(current => {
+                            const next = new Set(current);
+                            if (next.has(task.uid)) next.delete(task.uid);
+                            else next.add(task.uid);
+                            return next;
+                          })}
+                          accessibilityLabel={`${expanded ? 'Hide' : 'Show'} subtasks of ${task.title}`}
+                        >
+                          <Text allowFontScaling={false} style={styles.progressText}>
+                            {expanded ? '▾' : '▸'} {progress.label}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {/* Only where another level can exist: a subtask cannot
+                          take subtasks, and a promoted orphan is still one. */}
+                      {onAddSubtask && canHaveChildren(task, byUid) && (
+                        <TouchableOpacity
+                          style={styles.noteButton}
+                          onPress={() => {
+                            setNamingSubtaskFor(task);
+                            setSubtaskDraft('');
+                            setSubtaskDue(null);
+                            setSubtaskPriority(undefined);
+                          }}
+                          accessibilityLabel={`Add a subtask to ${task.title}`}
+                        >
+                          <Text allowFontScaling={false} style={styles.noteButtonText}>＋ Sub</Text>
+                        </TouchableOpacity>
+                      )}
 
                       {/* Pushing a deadline out was five presses through the
                           edit form, which is why it never got used. Offered
@@ -330,6 +414,104 @@ export function TaskListView({
 
       {/* Each option says where it lands, so a tap is never a guess about
           what "next week" meant from an overdue date. */}
+      {/* Named before it exists, like a new note: a subtask called "Untitled"
+          that you rename afterwards is two steps and one regret. */}
+      <Modal visible={namingSubtaskFor !== null} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.postponeOverlay}
+          activeOpacity={1}
+          onPress={() => setNamingSubtaskFor(null)}
+        >
+          <View style={styles.postponeSheet}>
+            <Text allowFontScaling={false} style={styles.postponeTitle} numberOfLines={2}>
+              Subtask of "{namingSubtaskFor?.title}"
+            </Text>
+            <HandwritingTextInput
+              ref={input => { subtaskInputRef.current = input; }}
+              style={styles.subtaskInput}
+              value={subtaskDraft}
+              onChangeText={setSubtaskDraft}
+              placeholder="What needs doing"
+              autoCorrect={false}
+            />
+            {/* Both optional. A step often has no date of its own, and
+                saying so beats a date you have to go back and clear. */}
+            <TouchableOpacity
+              style={styles.postponeOption}
+              onPress={() => setPickingSubtaskDate(true)}
+            >
+              <Text allowFontScaling={false} style={styles.postponeOptionText}>Due</Text>
+              <Text allowFontScaling={false} style={styles.postponeOptionDate}>
+                {subtaskDue
+                  ? subtaskDue.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                  : 'No date'}
+              </Text>
+            </TouchableOpacity>
+            {subtaskDue && (
+              <TouchableOpacity style={styles.postponeCancel} onPress={() => setSubtaskDue(null)}>
+                <Text allowFontScaling={false} style={styles.postponeCancelText}>Clear the date</Text>
+              </TouchableOpacity>
+            )}
+
+            <Text allowFontScaling={false} style={styles.filterLabel}>Priority</Text>
+            <View style={styles.chipRow}>
+              {([
+                [undefined, 'None'],
+                [2, 'Low'],
+                [3, 'Medium'],
+                [4, 'High'],
+              ] as Array<[TaskPriority | undefined, string]>).map(([value, label]) => (
+                <TouchableOpacity
+                  key={label}
+                  style={[styles.chip, subtaskPriority === value && styles.chipActive]}
+                  onPress={() => setSubtaskPriority(value)}
+                >
+                  <Text
+                    allowFontScaling={false}
+                    style={[styles.chipText, subtaskPriority === value && styles.chipTextActive]}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TouchableOpacity
+              style={styles.postponeOption}
+              onPress={() => {
+                // Read at press time: handwriting commits on blur, so state
+                // still holds the previous value when the button is tapped.
+                const typed = (subtaskInputRef.current?.getValue() ?? subtaskDraft).trim();
+                const parent = namingSubtaskFor;
+                if (!typed || !parent) return;
+                setNamingSubtaskFor(null);
+                setSubtaskDraft('');
+                if (onAddSubtask) {
+                  onAddSubtask(parent, {
+                    title: typed,
+                    dueDate: subtaskDue ?? undefined,
+                    priority: subtaskPriority,
+                  });
+                }
+              }}
+            >
+              <Text allowFontScaling={false} style={styles.postponeOptionText}>Add it</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.postponeCancel} onPress={() => setNamingSubtaskFor(null)}>
+              <Text allowFontScaling={false} style={styles.postponeCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <DatePickerModal
+        visible={pickingSubtaskDate}
+        value={subtaskDue ?? new Date()}
+        weekStartsOn={weekStartsOn}
+        onSelect={date => { setSubtaskDue(date); setPickingSubtaskDate(false); }}
+        onClose={() => setPickingSubtaskDate(false)}
+      />
+
       <Modal visible={postponing !== null} transparent animationType="fade">
         <TouchableOpacity
           style={styles.postponeOverlay}
@@ -494,6 +676,29 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   postponeOptionText: { fontSize: 13, fontWeight: 'bold', color: '#000000' },
+  // Indented, with a rule down the left so a subtask reads as belonging to
+  // the row above it rather than as a short title.
+  rowNested: { paddingLeft: 26, borderLeftWidth: 2, borderLeftColor: '#909090' },
+  progressText: { fontSize: 11, fontWeight: 'bold', color: '#303030' },
+  progressButton: {
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 6,
+    marginRight: 4,
+  },
+  subtaskInput: {
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    minHeight: 44,
+    fontSize: 13,
+    color: '#000000',
+    marginTop: 8,
+  },
   postponeOptionDate: { fontSize: 12, color: '#303030' },
   postponeCancel: {
     minHeight: 40,

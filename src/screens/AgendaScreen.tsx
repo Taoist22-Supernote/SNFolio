@@ -100,7 +100,7 @@ import { LASSO_BUTTON_ID, LASSO_PRESS_EVENT } from '../domain/buttonIds';
 import { parseCapturedText, resolveDateOrder, ParsedCapture } from '../domain/captureParser';
 import { captureLassoText } from '../supernote/lassoCapture';
 import { MonthGridView } from './MonthGridView';
-import { TaskListView } from './TaskListView';
+import { SubtaskDraft, TaskListView } from './TaskListView';
 import { ParaView } from './ParaView';
 import { ProjectDetailView } from './ProjectDetailView';
 import {
@@ -154,6 +154,16 @@ import { ItemCreationModal } from './ItemCreationModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { DatePickerModal } from './DatePickerModal';
 import { postponedToDay, postponedTask } from '../domain/taskPostpone';
+import {
+  canHaveChildren,
+  childrenOf,
+  completionCascade,
+  expandRows,
+  indexByUid,
+  parentReopenedForNewChild,
+  subtaskProgress,
+  suppressedChildUids,
+} from '../domain/subtasks';
 import { deleteFileWithCompanions, listParaFolderEntries, moveFileToFolder, moveParaFolder, openNoteInEditor, openResourceFile, ParaFolderEntry, renameFileInPlace } from '../supernote/exportService';
 import {
   ensureFileReadPermission,
@@ -276,6 +286,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   const [showDatePickerModal, setShowDatePickerModal] = useState<boolean>(false);
   /** Task waiting on an arbitrary date from the picker, if any. */
   const [postponeDateTask, setPostponeDateTask] = useState<CalendarTask | null>(null);
+  /** Parents whose subtasks are showing in the Day View list. */
+  const [dayExpandedParents, setDayExpandedParents] = useState<Set<string>>(new Set());
   const [showPlannerMenu, setShowPlannerMenu] = useState<boolean>(false);
   const [showCalendarMenu, setShowCalendarMenu] = useState<boolean>(false);
   const [showAppMenu, setShowAppMenu] = useState<boolean>(false);
@@ -2699,6 +2711,19 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   // Tasks are grouped by the day being viewed. Past Due and No Date only
   // surface on today — see sectionTasksForDay for why.
   const daySections = sectionTasksForDay(tasks, selectedDate);
+  /**
+   * Subtasks already covered by a parent listed somewhere in the day's five
+   * sections. Computed once across all of them: whether a child needs its own
+   * row depends on its parent being on this screen at all, not on being in
+   * the same section.
+   */
+  const daySuppressedChildren = suppressedChildUids(tasks, [
+    ...daySections.dueToday,
+    ...daySections.upcoming,
+    ...daySections.noDate,
+    ...daySections.pastDue,
+    ...daySections.completed,
+  ]);
   const focusTasks = dailyFocusTasks(tasks, selectedDate);
   const attentionProjects = projectsNeedingAttention(
     projects,
@@ -2785,14 +2810,31 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
    * two presses to finish a task, which is the action people take most.
    */
   const handleToggleTask = trackWorkspaceOperation(async (task: CalendarTask) => {
-    const next = withStatus(task, isDone(task) ? 'todo' : 'done');
-    calendarStorage.upsertTask(next);
+    // Both directions, as iCloud does: finishing a parent finishes what is
+    // under it, and reopening one reopens them. A one-way cascade would leave
+    // SNFolio and Reminders disagreeing after a sync.
+    const written = completionCascade(calendarStorage.getTasks(), task, !isDone(task));
+    const [next, ...children] = written;
+    for (const row of written) calendarStorage.upsertTask(row);
     setTasks([...calendarStorage.getTasks()]);
-    setStatusMsg(next.completed ? `Done: "${next.title}"` : `Reopened: "${next.title}"`);
-    const taskSyncError = await pushTaskToCaldav(next);
+
+    const alsoChanged = children.length
+      ? ` and ${children.length} subtask${children.length === 1 ? '' : 's'}`
+      : '';
+    setStatusMsg(next.completed
+      ? `Done: "${next.title}"${alsoChanged}`
+      : `Reopened: "${next.title}"${alsoChanged}`);
+
+    // Every row that changed has to reach the server, or a subtask closed
+    // here reopens on the next sync.
+    const errors: string[] = [];
+    for (const row of written) {
+      const error = await pushTaskToCaldav(row);
+      if (error) errors.push(error);
+    }
     setTasks([...calendarStorage.getTasks()]);
-    await pushTaskAsEvent(next);
-    if (taskSyncError) setStatusMsg(`Updated "${next.title}" locally. CalDAV: ${taskSyncError}`);
+    for (const row of written) await pushTaskAsEvent(row);
+    if (errors.length) setStatusMsg(`Updated "${next.title}" locally. CalDAV: ${errors[0]}`);
   });
 
   /**
@@ -4105,6 +4147,59 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
       ? `Added a task to "${event.summary}".`
       : `"${event.summary}" is now a task.`);
     return task;
+  });
+
+  /**
+   * Hangs a new subtask off a task.
+   *
+   * It inherits the parent's CalDAV list, so it lands beside it on the server
+   * rather than nowhere, and the parent's filing, so a subtask of a project's
+   * deliverable is in that project too. It starts undated: a subtask with its
+   * own deadline gets one from the task form or from Later.
+   */
+  const handleAddSubtask = trackWorkspaceOperation(async (parent: CalendarTask, draft: SubtaskDraft) => {
+    const trimmed = draft.title.trim();
+    if (!trimmed) return;
+
+    const uid = `task-${Date.now()}`;
+    const subtask: CalendarTask = {
+      uid,
+      title: trimmed,
+      completed: false,
+      status: 'todo',
+      createdAt: new Date(),
+      parentId: parent.uid,
+      // Its own deadline and priority, given at creation: a step is often
+      // due before the thing that contains it.
+      dueDate: draft.dueDate,
+      allDay: draft.dueDate ? true : undefined,
+      priority: draft.priority,
+      caldavCollectionUrl: parent.caldavCollectionUrl,
+    };
+    calendarStorage.upsertTask(subtask);
+
+    // New work under a completed task means it is not done after all; leaving
+    // it closed would recreate the state the cascade exists to prevent.
+    const reopenedParent = parentReopenedForNewChild(parent);
+    if (reopenedParent) calendarStorage.upsertTask(reopenedParent);
+
+    const parentMembership = calendarStorage.getMembership(parent.uid);
+    calendarStorage.setMembership(uid, {
+      areaId: parentMembership.areaId,
+      projectId: parentMembership.projectId,
+    });
+
+    setTasks([...calendarStorage.getTasks()]);
+    setMembershipRevision(value => value + 1);
+    void calendarStorage.flush();
+    setStatusMsg(reopenedParent
+      ? `Added "${trimmed}" and reopened "${parent.title}".`
+      : `Added "${trimmed}" under "${parent.title}".`);
+
+    const taskSyncError = await pushTaskToCaldav(subtask);
+    if (reopenedParent) await pushTaskToCaldav(reopenedParent);
+    setTasks([...calendarStorage.getTasks()]);
+    if (taskSyncError) setStatusMsg(`Added "${trimmed}" locally. CalDAV: ${taskSyncError}`);
   });
 
   /** Puts a converted event back on the calendar, leaving the task alone. */
@@ -6600,6 +6695,13 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
             }
             onCreateTask={handleCreateNewTask}
             editingTask={editingTask}
+            subtasks={editingTask ? childrenOf(tasks, editingTask.uid) : undefined}
+            onToggleSubtask={handleToggleTask}
+            onAddSubtaskHere={
+              editingTask && canHaveChildren(editingTask, indexByUid(tasks))
+                ? (parent, title) => { void handleAddSubtask(parent, { title }); }
+                : undefined
+            }
             eventNotePath={editingEvent ? eventNotePaths[editingEvent.uid] : undefined}
             onLinkEventNote={event => { void linkExistingNote(eventNoteKey(event, perSessionNotes(event)), event); }}
             onEventNoteAction={(event, path) => {
@@ -6919,6 +7021,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
               }}
               onPostpone={(task, to) => { void handlePostponeTask(task, to); }}
               onPickPostponeDate={setPostponeDateTask}
+              onAddSubtask={(parent, draft) => { void handleAddSubtask(parent, draft); }}
+              weekStartsOn={weekStartsOn}
             />
           )}
 
@@ -7077,8 +7181,13 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                       ['No Date', daySections.noDate, false],
                       ['Past Due', daySections.pastDue, true],
                       ['Completed', daySections.completed, false],
-                    ] as Array<[string, CalendarTask[], boolean]>).map(([label, items, showDate]) =>
-                      items.length === 0 ? null : (
+                    ] as Array<[string, CalendarTask[], boolean]>).map(([label, allItems, showDate]) => {
+                      // A subtask follows its parent, so it loses its own row
+                      // whenever that parent is listed in ANY of these five
+                      // sections — an undated step of a task due today would
+                      // otherwise appear twice, once under "No Date".
+                      const items = allItems.filter(task => !daySuppressedChildren.has(task.uid));
+                      return items.length === 0 ? null : (
                         <View key={label || 'due'}>
                           {label ? <Text allowFontScaling={false} style={styles.taskGroupLabel}>{label}</Text> : null}
                           {/* Upcoming has no horizon, so a term of deadlines
@@ -7092,10 +7201,15 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                           {group.label ? (
                             <Text allowFontScaling={false} style={styles.taskMonthLabel}>{group.label}</Text>
                           ) : null}
-                          {group.tasks.map(task => {
+                          {expandRows(tasks, group.tasks, dayExpandedParents).map(({ task, depth }) => {
                             const contextTag = taskContextTagFor(task.uid);
+                            const progress = depth === 0 ? subtaskProgress(tasks, task.uid) : undefined;
+                            const expanded = dayExpandedParents.has(task.uid);
                             return (
-                              <View key={task.uid} style={styles.focusTaskRow}>
+                              <View
+                                key={task.uid}
+                                style={[styles.focusTaskRow, depth === 1 && styles.focusSubtaskRow]}
+                              >
                                 <TouchableOpacity
                                   onPress={() => handleToggleTask(task)}
                                 >
@@ -7110,6 +7224,25 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                                   </Text>
                                 </TouchableOpacity>
 
+                                {/* The same control as the Tasks tab, so one
+                                    habit works on both screens. */}
+                                {progress && (
+                                  <TouchableOpacity
+                                    style={styles.focusProgressButton}
+                                    onPress={() => setDayExpandedParents(current => {
+                                      const next = new Set(current);
+                                      if (next.has(task.uid)) next.delete(task.uid);
+                                      else next.add(task.uid);
+                                      return next;
+                                    })}
+                                    accessibilityLabel={`${expanded ? 'Hide' : 'Show'} subtasks of ${task.title}`}
+                                  >
+                                    <Text allowFontScaling={false} style={styles.focusProgressText}>
+                                      {expanded ? '▾' : '▸'} {progress.label}
+                                    </Text>
+                                  </TouchableOpacity>
+                                )}
+
                                 <TouchableOpacity
                                   style={styles.focusTaskDelete}
                                   onPress={() => requestDeleteTask(task)}
@@ -7122,8 +7255,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                           </View>
                           ))}
                         </View>
-                      )
-                    )
+                      );
+                    })
                   )}
 
                   </PlannerSection>
@@ -8052,6 +8185,19 @@ const styles = StyleSheet.create({
   focusTaskDelete: { paddingHorizontal: 6, paddingVertical: 2 },
   focusTaskDeleteText: { fontSize: 13, color: '#606060' },
   focusTaskText: { fontSize: 13, color: '#000000' },
+  // Indented with a rule down the left, as on the Tasks tab, so a subtask
+  // reads as belonging to the row above it.
+  focusSubtaskRow: { paddingLeft: 28, borderLeftWidth: 2, borderLeftColor: '#909090' },
+  focusProgressButton: {
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 6,
+    marginRight: 4,
+  },
+  focusProgressText: { fontSize: 11, fontWeight: 'bold', color: '#303030' },
   focusTaskDone: { textDecorationLine: 'line-through', color: '#606060' },
   dailyNoteBtn: { alignSelf: 'flex-start', margin: 10, paddingHorizontal: 16, borderWidth: 2, borderColor: '#000000', borderRadius: 6, paddingVertical: 10, alignItems: 'center' },
   dailyNoteBtnText: { fontSize: 13, fontWeight: 'bold', color: '#000000' },

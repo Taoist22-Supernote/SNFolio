@@ -217,6 +217,10 @@ export function generateOutboundIcsTodo(task: CalendarEvent): string {
       : '',
     completed ? `COMPLETED:${dtStamp}` : '',
     task.description ? `DESCRIPTION:${escapeIcsText(task.description)}` : '',
+    // Re-emitted, not merely accepted. The outbound VTODO is rebuilt from
+    // scratch, so a parent link the server already held was being destroyed
+    // every time a subtask was ticked off or moved here.
+    task.parentUid ? `RELATED-TO;RELTYPE=PARENT:${escapeIcsText(task.parentUid)}` : '',
     `END:VTODO`,
     `END:VCALENDAR`,
   ].filter(Boolean);

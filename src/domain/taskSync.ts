@@ -41,6 +41,7 @@ export function taskToCaldavItem(task: CalendarTask): CalendarEvent {
     undatedTask: !task.dueDate,
     completed: task.completed,
     priority: task.priority,
+    parentUid: task.parentId,
     caldavUrl: task.caldavUrl,
     etag: task.etag,
   };
@@ -56,6 +57,9 @@ export function taskFromCaldavItem(
     title: item.summary.replace(/^\[TASK\]\s*/i, '').trim(),
     dueDate: item.undatedTask ? undefined : new Date(item.start),
     allDay: item.allDay,
+    // A task cannot be its own parent; a server that says so is ignored
+    // rather than producing a row that nests inside itself.
+    parentId: item.parentUid && item.parentUid !== item.uid ? item.parentUid : undefined,
     completed: item.completed === true,
     createdAt: existing?.createdAt || new Date(),
     notes: item.description,

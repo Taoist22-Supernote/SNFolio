@@ -4,6 +4,7 @@ import {
   taskFromCaldavItem,
   taskToCaldavItem,
 } from './taskSync';
+import { CalendarEvent, CalendarTask } from './types';
 
 describe('task CalDAV conversion', () => {
   test('preserves due date, completion, priority and notes', () => {
@@ -45,5 +46,53 @@ describe('task CalDAV conversion', () => {
   test('infers ownership for tasks stored before collection tracking existed', () => {
     expect(inferTaskCollectionUrl('https://dav.example.test/tasks/old.ics?token=x'))
       .toBe('https://dav.example.test/tasks/');
+  });
+});
+
+
+const subtaskItem = (over: Partial<CalendarEvent> = {}): CalendarEvent => ({
+  uid: 'todo-child',
+  summary: 'Draft the appendix',
+  start: new Date('2026-11-10T17:00:00Z'),
+  end: new Date('2026-11-10T17:30:00Z'),
+  allDay: false,
+  attendees: [],
+  isTask: true,
+  ...over,
+});
+
+const subtaskTask = (over: Partial<CalendarTask> = {}): CalendarTask => ({
+  uid: 'todo-child',
+  title: 'Draft the appendix',
+  completed: false,
+  createdAt: new Date('2026-11-01T09:00:00'),
+  ...over,
+});
+
+describe('a parent link survives a round trip', () => {
+  test('an incoming subtask becomes a task with a parent', () => {
+    expect(taskFromCaldavItem(subtaskItem({ parentUid: 'todo-parent' })).parentId).toBe('todo-parent');
+  });
+
+  test('a task with no parent link gets none', () => {
+    expect(taskFromCaldavItem(subtaskItem()).parentId).toBeUndefined();
+  });
+
+  test('a server claiming a task is its own parent is ignored', () => {
+    // It would otherwise render as a row nested inside itself.
+    expect(taskFromCaldavItem(subtaskItem({ parentUid: 'todo-child' })).parentId).toBeUndefined();
+  });
+
+  test('an outgoing subtask carries its parent back to the server', () => {
+    // The outbound VTODO is rebuilt from scratch, so anything not projected
+    // here is destroyed on the server the next time this task is pushed.
+    expect(taskToCaldavItem(subtaskTask({ parentId: 'todo-parent' })).parentUid).toBe('todo-parent');
+  });
+
+  test('ticking off or moving a subtask does not orphan it', () => {
+    const stored = taskFromCaldavItem(subtaskItem({ parentUid: 'todo-parent' }));
+    const pushedBack = taskToCaldavItem({ ...stored, completed: true });
+
+    expect(pushedBack.parentUid).toBe('todo-parent');
   });
 });
