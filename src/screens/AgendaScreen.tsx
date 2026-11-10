@@ -362,6 +362,7 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   const [atomsActions, setAtomsActions] = useState<AtomsAction[]>([]);
   const [atomsRefresh, setAtomsRefresh] = useState(0);
   const [showResurface, setShowResurface] = useState(false);
+  const [showAtomsResurface, setShowAtomsResurface] = useState<boolean>(() => calendarStorage.getSettings().showAtomsResurface !== false);
   const [resurfaceMessage, setResurfaceMessage] = useState('');
   const [syncPhase, setSyncPhase] = useState<'idle' | 'syncing' | 'success' | 'partial' | 'error'>('idle');
   const [lastSuccessfulSync, setLastSuccessfulSync] = useState<string>('');
@@ -4569,8 +4570,10 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   };
 
   const showingDayPlanner = viewMode === 'agenda' && plannerMode === 'day';
+  // Settings needs the list too: its Atoms switch only appears when Atoms is in use.
+  const needsAtomsList = showingDayPlanner || showSettings;
   useEffect(() => {
-    if (!showingDayPlanner) return;
+    if (!needsAtomsList) return;
     let live = true;
     readAtomsResurface().then(read => {
       if (!live) return;
@@ -4580,7 +4583,7 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     return () => {
       live = false;
     };
-  }, [showingDayPlanner, atomsRefresh, selectedDate]);
+  }, [needsAtomsList, atomsRefresh, selectedDate]);
 
   const resurfaceDue: ResurfaceAtom[] = dueResurfaceAtoms(atomsSummary, atomsActions, Date.now());
 
@@ -6239,6 +6242,22 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
 
           {settingsTab === 'app' && (
             <>
+          {/* Only for people who use the Atoms plugin: without it there is
+              no list, and nothing about Resurface is shown anywhere. */}
+          {atomsSummary ? (
+            <>
+              <Text allowFontScaling={false} style={[styles.sectionTitle, { marginTop: 15 }]}>Atoms</Text>
+              <SettingChoice
+                label="Resurface strip in the Day Planner"
+                labels={['Hide', 'Show']}
+                value={showAtomsResurface}
+                onChange={show => {
+                  setShowAtomsResurface(show);
+                  calendarStorage.updateSettings({ showAtomsResurface: show });
+                }}
+              />
+            </>
+          ) : null}
           <Text allowFontScaling={false} style={[styles.sectionTitle, { marginTop: 15 }]}>Event Types</Text>
           <Text allowFontScaling={false} style={styles.bodyText}>
             What kinds of event you have — Class, Work, Personal. Each carries where its notes are
@@ -7394,7 +7413,7 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                   {/* Resurface is one line at the top (CT, 2026-11-10): seen
                       every time, without pushing tasks down the column. Hidden
                       unless the Atoms plugin has shared its list. */}
-                  {atomsSummary ? (
+                  {atomsSummary && showAtomsResurface ? (
                     resurfaceDue.length ? (
                       <TouchableOpacity
                         style={styles.resurfaceStrip}

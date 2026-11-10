@@ -627,6 +627,34 @@ public class CalendarFileModule extends ReactContextBaseJavaModule {
         return base.isEmpty() ? "unnamed.json" : base;
     }
 
+    /**
+     * Whether another plugin is installed, judged by its private folder
+     * (<files>/plugins/<pluginID>, per docs.supernote.com plugin-base/permission).
+     * Resolves {checked, installed, folders}. checked=false means the plugins
+     * folder isn't where expected, so nothing can be concluded and the caller
+     * must not act on `installed`. Unverified on device that uninstalling
+     * removes the folder; `folders` is returned so the first run can show it.
+     */
+    @ReactMethod
+    public void pluginFolderState(String pluginId, Promise promise) {
+        com.facebook.react.bridge.WritableMap result = com.facebook.react.bridge.Arguments.createMap();
+        try {
+            File dir = new File(getReactApplicationContext().getFilesDir(), "plugins");
+            boolean checked = dir.isDirectory();
+            result.putBoolean("checked", checked);
+            result.putBoolean("installed", checked && pluginId != null && new File(dir, pluginId).isDirectory());
+            com.facebook.react.bridge.WritableArray folders = com.facebook.react.bridge.Arguments.createArray();
+            String[] names = checked ? dir.list() : null;
+            if (names != null) for (String name : names) folders.pushString(name);
+            result.putArray("folders", folders);
+        } catch (Throwable error) {
+            result.putBoolean("checked", false);
+            result.putBoolean("installed", false);
+            result.putArray("folders", com.facebook.react.bridge.Arguments.createArray());
+        }
+        promise.resolve(result);
+    }
+
     /** Reads atoms-shared/<name>; resolves null when Atoms hasn't written it. */
     @ReactMethod
     public void readAtomsShared(String name, Promise promise) {

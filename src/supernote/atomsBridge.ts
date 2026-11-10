@@ -22,7 +22,11 @@ import { ensureFileReadPermission } from './pluginPermissions';
  * Atoms install just means no Resurface section content.
  */
 
+/** The Atoms plugin's ID (sn-atoms/PluginConfig.json). */
+export const ATOMS_PLUGIN_ID = 'e8ce18ys7azuhi67';
+
 type AtomsSharedModule = {
+  pluginFolderState?: (pluginId: string) => Promise<{ checked: boolean; installed: boolean; folders: string[] }>;
   readAtomsShared?: (name: string) => Promise<string | null>;
   writeAtomsShared?: (name: string, content: string) => Promise<string>;
 };
@@ -48,10 +52,33 @@ export async function readAtomsResurface(): Promise<ResurfaceRead> {
     const summary = parseResurfaceSummary(summaryRaw);
     const problem = summaryRaw === null ? 'none' : summary === null ? 'unreadable' : '';
     if (problem) console.log(`[SNFolio] Atoms resurface.json: ${problem}`);
+    // Uninstalling Atoms leaves its list behind, so a list alone doesn't mean
+    // Atoms is still there. Hide it when Atoms' plugin folder is gone, but only
+    // when the plugins folder could be checked at all.
+    if (summary && (await atomsUninstalled())) {
+      return { summary: null, actions: [], problem: 'uninstalled' };
+    }
     return { summary, actions: parseAtomsActions(actionsRaw), problem };
   } catch (e: any) {
     console.log(`[SNFolio] reading Atoms files failed: ${e?.message ?? e}`);
     return { summary: null, actions: [], problem: `Could not read Atoms' list (${e?.message ?? 'read failed'}).` };
+  }
+}
+
+let folderStateLogged = false;
+
+/** True only when the plugins folder was found and Atoms' folder is not in it. */
+async function atomsUninstalled(): Promise<boolean> {
+  if (!Native?.pluginFolderState) return false;
+  try {
+    const state = await Native.pluginFolderState(ATOMS_PLUGIN_ID);
+    if (!folderStateLogged) {
+      folderStateLogged = true;
+      console.log(`[SNFolio] plugin folders (checked=${state.checked}, atoms=${state.installed}): ${state.folders.join(', ')}`);
+    }
+    return state.checked && !state.installed;
+  } catch {
+    return false;
   }
 }
 

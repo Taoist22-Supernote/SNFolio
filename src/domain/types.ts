@@ -356,6 +356,8 @@ export interface CalendarSettings {
   timeFormat?: '12h' | '24h';
   nomadWeeklySections?: Partial<Record<'projects' | 'deadlines' | 'journal', boolean>>;
   nomadPlannerSections?: Partial<Record<'schedule' | 'journal' | 'focus' | 'tasks' | 'projects' | 'tomorrow', boolean>>;
+  /** Day Planner Resurface strip from the Atoms plugin; absent = shown. */
+  showAtomsResurface?: boolean;
   hideAllDayEvents: boolean; // default: false
   hideSoloEvents: boolean; // default: false
   caldavEnabled?: boolean;
