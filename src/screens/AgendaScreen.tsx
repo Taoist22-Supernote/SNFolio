@@ -7362,13 +7362,16 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                   {focusTasks.length === 0 ? (
                     <Text allowFontScaling={false} style={styles.panelEmpty}>No open tasks.</Text>
                   ) : (
-                    <View style={isWideScreen ? styles.focusPriorityRow : styles.focusPriorityStack}>
+                    <View style={styles.focusPriorityStack}>
                       {focusTasks.map((task, index) => {
                         const contextTag = taskContextTagFor(task.uid);
                         return (
                           <TouchableOpacity key={task.uid} style={styles.focusPriorityItem} onPress={() => handleEditTask(task)}>
-                            <Text allowFontScaling={false} style={styles.focusPriorityNumber}>{index + 1}{contextTag ? ` · ${contextTag}` : ''}</Text>
-                            <Text allowFontScaling={false} style={styles.focusPriorityTitle} numberOfLines={2}><LinkedFileMarker item={task} />{task.title}</Text>
+                            {/* One line per priority: number, then title (CT, 2026-11-10: Focus was too tall). */}
+                            <Text allowFontScaling={false} style={styles.focusPriorityTitle} numberOfLines={1}>
+                              <Text style={styles.focusPriorityNumber}>{`${index + 1}${contextTag ? ` · ${contextTag}` : ''}  `}</Text>
+                              <LinkedFileMarker item={task} />{task.title}
+                            </Text>
                           </TouchableOpacity>
                         );
                       })}
@@ -8460,19 +8463,19 @@ const styles = StyleSheet.create({
   lookaheadText: { flex: 1, fontSize: 15, color: '#000000', marginRight: 12 },
   lookaheadAction: { fontSize: 13, fontWeight: 'bold', color: '#000000' },
   subHeaderMeta: { fontSize: 12, color: '#303030' },
-  focusPriorityRow: { flexDirection: 'row' },
   focusPriorityStack: { flexDirection: 'column' },
+  // Compact (CT, 2026-11-10): one line per priority, stacked, so Focus takes
+  // three short rows instead of three tall boxes.
   focusPriorityItem: {
-    flex: 1,
-    minHeight: 72,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
-    borderRightWidth: 1,
+    minHeight: 34,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderBottomWidth: 1,
     borderColor: '#000000',
   },
   focusPriorityNumber: { fontSize: 12, fontWeight: 'bold', color: '#303030' },
-  focusPriorityTitle: { fontSize: 14, fontWeight: 'bold', color: '#000000', marginTop: 5 },
+  focusPriorityTitle: { fontSize: 13, fontWeight: 'bold', color: '#000000' },
   focusSummary: { fontSize: 13, fontWeight: 'bold', color: '#000000', padding: 10 },
   subHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#000000', paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#f2f2f2' },
   subHeaderText: { fontSize: 12, fontWeight: 'bold', color: '#000000' },
