@@ -7501,8 +7501,13 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                       // whenever that parent is listed in ANY of these five
                       // sections — an undated step of a task due today would
                       // otherwise appear twice, once under "No Date".
-                      const items = allItems.filter(task => !daySuppressedChildren.has(task.uid));
-                      return items.length === 0 ? null : (
+                      const listed = allItems.filter(task => !daySuppressedChildren.has(task.uid));
+                      // No Date has no end and filled the column (CT,
+                      // 2026-11-10): show the first few, and the rest live in
+                      // the Tasks view, which lists undated tasks under Open.
+                      const items = label === 'No Date' ? listed.slice(0, NO_DATE_SHOWN) : listed;
+                      const moreCount = listed.length - items.length;
+                      return listed.length === 0 ? null : (
                         <View key={label || 'due'}>
                           {label ? <Text allowFontScaling={false} style={styles.taskGroupLabel}>{label}</Text> : null}
                           {/* Upcoming has no horizon, so a term of deadlines
@@ -7569,6 +7574,13 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                           })}
                           </View>
                           ))}
+                          {moreCount > 0 ? (
+                            <TouchableOpacity style={styles.taskMoreRow} onPress={() => setViewMode('tasks')}>
+                              <Text allowFontScaling={false} style={styles.taskMoreText}>
+                                {`+${moreCount} more with no date ›`}
+                              </Text>
+                            </TouchableOpacity>
+                          ) : null}
                         </View>
                       );
                     })
@@ -7686,6 +7698,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   );
 }
 
+/** No Date tasks shown in the Day Planner before "+N more" (CT, 2026-11-10). */
+const NO_DATE_SHOWN = 3;
 /** Room kept below the Manta schedule grid: panel border and screen padding. */
 const SCHEDULE_BOTTOM_MARGIN = 24;
 /** An ALL DAY row above the grid, with its margin (DayScheduleGrid allDayRow). */
@@ -8413,6 +8427,8 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   dayProjectName: { flex: 1, fontSize: 12, fontWeight: 'bold', color: '#000000' },
+  taskMoreRow: { paddingHorizontal: 10, paddingVertical: 8, minHeight: 36, justifyContent: 'center' },
+  taskMoreText: { fontSize: 12, fontWeight: 'bold', color: '#000000', textDecorationLine: 'underline' },
   // Resurface strip (ideas shared by Atoms): black on white, no colour meaning.
   resurfaceStrip: { flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderColor: '#000000', backgroundColor: '#ffffff', minHeight: 44, paddingHorizontal: 10, marginBottom: 8 },
   resurfaceStripText: { flex: 1, fontSize: 14, fontWeight: 'bold', color: '#000000' },
