@@ -7362,11 +7362,11 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                   {focusTasks.length === 0 ? (
                     <Text allowFontScaling={false} style={styles.panelEmpty}>No open tasks.</Text>
                   ) : (
-                    <View style={styles.focusPriorityStack}>
+                    <View style={isWideScreen ? styles.focusPriorityRow : styles.focusPriorityStack}>
                       {focusTasks.map((task, index) => {
                         const contextTag = taskContextTagFor(task.uid);
                         return (
-                          <TouchableOpacity key={task.uid} style={styles.focusPriorityItem} onPress={() => handleEditTask(task)}>
+                          <TouchableOpacity key={task.uid} style={[styles.focusPriorityItem, isWideScreen && styles.focusPriorityItemWide]} onPress={() => handleEditTask(task)}>
                             {/* One line per priority: number, then title (CT, 2026-11-10: Focus was too tall). */}
                             <Text allowFontScaling={false} style={styles.focusPriorityTitle} numberOfLines={1}>
                               <Text style={styles.focusPriorityNumber}>{`${index + 1}${contextTag ? ` · ${contextTag}` : ''}  `}</Text>
@@ -8464,8 +8464,10 @@ const styles = StyleSheet.create({
   lookaheadAction: { fontSize: 13, fontWeight: 'bold', color: '#000000' },
   subHeaderMeta: { fontSize: 12, color: '#303030' },
   focusPriorityStack: { flexDirection: 'column' },
-  // Compact (CT, 2026-11-10): one line per priority, stacked, so Focus takes
-  // three short rows instead of three tall boxes.
+  // Compact (CT, 2026-11-10): each priority is one short line. Side by side on
+  // a Manta (one 34-point row in all), stacked on narrower screens.
+  focusPriorityRow: { flexDirection: 'row' },
+  focusPriorityItemWide: { flex: 1, borderRightWidth: 1 },
   focusPriorityItem: {
     minHeight: 34,
     justifyContent: 'center',
