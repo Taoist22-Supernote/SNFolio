@@ -7301,48 +7301,13 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
               </View>
 
               <View style={!isNomad && isWideScreen ? styles.planeRow : styles.planeStack}>
-                {/* ── SCHEDULE ─────────────────────────────────────────── */}
+                {/* ── DAY: JOURNAL, FOCUS, SCHEDULE ─────────────────────────
+                    Journal and Focus sit above the schedule so the other
+                    column holds only tasks, projects, Resurface and tomorrow
+                    and does not need to scroll on a Manta (CT, 2026-11-10). */}
                 <View style={[styles.panel, !isNomad && isWideScreen && styles.panelHalf]}>
-                  <PlannerSection id="schedule" title="Schedule" summary={`${events.length} event(s)`}>
-                  <View style={styles.panelHeader}>
-                    {!isNomad && (<Text allowFontScaling={false} style={styles.panelHeaderText}>
-                      📅 SCHEDULE ({events.length})
-                    </Text>)}
-                    <TouchableOpacity
-                      onPress={() => {
-                        setEditingEvent(null);
-                        setLassoDraftTitle('');
-                        setLassoDraftParsed(null);
-                        setLassoDraftDate(null);
-                        setCreationType('event');
-                        setShowItemCreationModal(true);
-                      }}
-                    >
-                      <Text allowFontScaling={false} style={styles.panelHeaderAction}>+ Event</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <DayScheduleGrid
-                    events={events}
-                    startHour={scheduleStartHour}
-                    endHour={scheduleEndHour}
-                    notePaths={eventNotePaths}
-                    onEditEvent={dayGridHandlers.onEditEvent}
-                    onNoteAction={dayGridHandlers.onNoteAction}
-                    onDeleteEvent={dayGridHandlers.onDeleteEvent}
-                    typeLabel={dayGridHandlers.typeLabel}
-                  />
-                  </PlannerSection>
-                </View>
-
-                {/* ── DAY FOCUS & TASKS ────────────────────────────────── */}
-                <View style={[styles.panel, !isNomad && isWideScreen && styles.panelHalf]}>
-                  {!isNomad && (<View style={styles.panelHeader}>
-                    <Text allowFontScaling={false} style={styles.panelHeaderText}>❤️ FOCUS &amp; DAILY JOURNAL</Text>
-                  </View>)}
-
                   {/* The journal is a card rather than a button: it is the
-                      first thing on this side of the page, so it should read
+                      first thing on the page, so it should read
                       as a place rather than an action. */}
                   <PlannerSection id="journal" title="Daily Journal" summary={dailyNoteExists === false ? "Create this day’s journal" : "Open this day’s journal"}>
                   <View style={styles.journalCard}>
@@ -7385,6 +7350,40 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                   )}
 
                   </PlannerSection>
+                  <PlannerSection id="schedule" title="Schedule" summary={`${events.length} event(s)`}>
+                  <View style={styles.panelHeader}>
+                    {!isNomad && (<Text allowFontScaling={false} style={styles.panelHeaderText}>
+                      📅 SCHEDULE ({events.length})
+                    </Text>)}
+                    <TouchableOpacity
+                      onPress={() => {
+                        setEditingEvent(null);
+                        setLassoDraftTitle('');
+                        setLassoDraftParsed(null);
+                        setLassoDraftDate(null);
+                        setCreationType('event');
+                        setShowItemCreationModal(true);
+                      }}
+                    >
+                      <Text allowFontScaling={false} style={styles.panelHeaderAction}>+ Event</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <DayScheduleGrid
+                    events={events}
+                    startHour={scheduleStartHour}
+                    endHour={scheduleEndHour}
+                    notePaths={eventNotePaths}
+                    onEditEvent={dayGridHandlers.onEditEvent}
+                    onNoteAction={dayGridHandlers.onNoteAction}
+                    onDeleteEvent={dayGridHandlers.onDeleteEvent}
+                    typeLabel={dayGridHandlers.typeLabel}
+                  />
+                  </PlannerSection>
+                </View>
+
+                {/* ── TASKS, PROJECTS, RESURFACE, TOMORROW ──────────────── */}
+                <View style={[styles.panel, !isNomad && isWideScreen && styles.panelHalf]}>
                   <PlannerSection id="tasks" title="Tasks & Deliverables" summary={`${countOpenTasks(daySections)} needing attention`}>
                   <View style={styles.subHeader}>
                     {!isNomad && (<Text allowFontScaling={false} style={styles.subHeaderText}>

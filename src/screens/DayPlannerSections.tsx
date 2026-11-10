@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 import { calendarStorage } from '../storage/calendarStorage';
 
 export const PLANNER_SECTIONS = [
-  ['schedule', 'Schedule'], ['journal', 'Journal'], ['focus', 'Focus'],
+  ['journal', 'Journal'], ['focus', 'Focus'], ['schedule', 'Schedule'],
   ['tasks', 'Tasks'], ['projects', 'Projects'], ['tomorrow', 'Tomorrow'],
 ] as const;
 const WEEKLY_SECTIONS = [['thisweek', 'This Week'], ['projects', 'Projects'], ['deadlines', 'Deadlines'], ['journal', 'Journals']] as const;
