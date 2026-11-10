@@ -98,8 +98,9 @@ import {
   taskToCaldavItem,
 } from '../domain/taskSync';
 import { LASSO_BUTTON_ID, LASSO_PRESS_EVENT, TOOLBAR_BUTTON_ID } from '../domain/buttonIds';
-import { dueResurfaceAtoms, sinceLabel, type AtomsAction, type ResurfaceAtom, type ResurfaceSummary } from '../domain/atomsResurface';
+import { dueResurfaceAtoms, type AtomsAction, type ResurfaceAtom, type ResurfaceSummary } from '../domain/atomsResurface';
 import { openResurfaceSource, readAtomsResurface, recordAtomsAction } from '../supernote/atomsBridge';
+import { ResurfacePanel } from './ResurfacePanel';
 import { parseCapturedText, resolveDateOrder, ParsedCapture } from '../domain/captureParser';
 import { captureLassoText } from '../supernote/lassoCapture';
 import { MonthGridView } from './MonthGridView';
@@ -360,6 +361,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   const [atomsSummary, setAtomsSummary] = useState<ResurfaceSummary | null>(null);
   const [atomsActions, setAtomsActions] = useState<AtomsAction[]>([]);
   const [atomsRefresh, setAtomsRefresh] = useState(0);
+  const [showResurface, setShowResurface] = useState(false);
+  const [resurfaceMessage, setResurfaceMessage] = useState('');
   const [syncPhase, setSyncPhase] = useState<'idle' | 'syncing' | 'success' | 'partial' | 'error'>('idle');
   const [lastSuccessfulSync, setLastSuccessfulSync] = useState<string>('');
   const [syncDetails, setSyncDetails] = useState<string[]>([]);
@@ -4585,7 +4588,7 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   const tellAtoms = async (atom: ResurfaceAtom, action: 'seen' | 'dismiss'): Promise<boolean> => {
     const next = await recordAtomsAction(atom.id, action);
     if (!next) {
-      setStatusMsg('Could not pass that on to Atoms. Open Atoms and set it there instead.');
+      setResurfaceMessage('Could not pass that on to Atoms. Open Atoms and set it there instead.');
       return false;
     }
     setAtomsActions(next);
@@ -4596,8 +4599,12 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     await tellAtoms(atom, 'seen');
     await prepareForNativeFileOpen();
     const res = await openResurfaceSource(atom);
-    setStatusMsg(res.message);
-    if (res.success) closePanel();
+    if (res.success) {
+      setShowResurface(false);
+      closePanel();
+    } else {
+      setResurfaceMessage(res.message);
+    }
   });
 
   /**
@@ -7382,8 +7389,31 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                   </PlannerSection>
                 </View>
 
-                {/* ── TASKS, PROJECTS, RESURFACE, TOMORROW ──────────────── */}
+                {/* ── RESURFACE STRIP, TASKS, PROJECTS, TOMORROW ────────── */}
                 <View style={[styles.panel, !isNomad && isWideScreen && styles.panelHalf]}>
+                  {/* Resurface is one line at the top (CT, 2026-11-10): seen
+                      every time, without pushing tasks down the column. Hidden
+                      unless the Atoms plugin has shared its list. */}
+                  {atomsSummary ? (
+                    resurfaceDue.length ? (
+                      <TouchableOpacity
+                        style={styles.resurfaceStrip}
+                        accessibilityRole="button"
+                        onPress={() => {
+                          setResurfaceMessage('');
+                          setShowResurface(true);
+                        }}>
+                        <Text allowFontScaling={false} style={styles.resurfaceStripText} numberOfLines={1}>
+                          {`💡 ${resurfaceDue.length} idea${resurfaceDue.length === 1 ? '' : 's'} to resurface`}
+                        </Text>
+                        <Text allowFontScaling={false} style={styles.resurfaceStripAction}>›</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={styles.resurfaceStripQuiet}>
+                        <Text allowFontScaling={false} style={styles.resurfaceStripQuietText} numberOfLines={1}>💡 Nothing to resurface today</Text>
+                      </View>
+                    )
+                  ) : null}
                   <PlannerSection id="tasks" title="Tasks & Deliverables" summary={`${countOpenTasks(daySections)} needing attention`}>
                   <View style={styles.subHeader}>
                     {!isNomad && (<Text allowFontScaling={false} style={styles.subHeaderText}>
@@ -7530,44 +7560,6 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                   )}
 
                   </PlannerSection>
-                  {atomsSummary ? (
-                  <PlannerSection
-                    id="resurface"
-                    title="Resurface"
-                    summary={resurfaceDue.length ? `${resurfaceDue.length} idea(s) from Atoms` : 'Nothing to resurface today'}>
-                  {!isNomad && (<View style={styles.subHeader}>
-                    <Text allowFontScaling={false} style={styles.subHeaderText}>💡 RESURFACE</Text>
-                    <Text allowFontScaling={false} style={styles.subHeaderMeta}>Ideas from Atoms you haven’t opened in a while</Text>
-                  </View>)}
-                  {resurfaceDue.length === 0 ? (
-                    <Text allowFontScaling={false} style={styles.panelEmpty}>Nothing to resurface today.</Text>
-                  ) : (
-                    resurfaceDue.map(atom => (
-                      <View key={atom.id} style={styles.resurfaceItem}>
-                        <Text allowFontScaling={false} style={styles.resurfaceTitle} numberOfLines={2}>{atom.title}</Text>
-                        <Text allowFontScaling={false} style={styles.resurfaceMeta} numberOfLines={1}>
-                          {`${atom.source.title} · p. ${atom.source.page + 1} · not opened in ${sinceLabel(atom.lastSeen, Date.now())}`}
-                        </Text>
-                        <View style={styles.resurfaceActions}>
-                          <TouchableOpacity style={styles.resurfaceButton} onPress={() => void handleResurfaceOpen(atom)}>
-                            <Text allowFontScaling={false} style={styles.resurfaceButtonText}>Open Source</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={styles.resurfaceButton} onPress={() => {
-                            void tellAtoms(atom, 'seen').then(ok => { if (ok) setStatusMsg('Set aside. It will come back after the usual gap.'); });
-                          }}>
-                            <Text allowFontScaling={false} style={styles.resurfaceButtonText}>Not Now</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity style={styles.resurfaceButton} onPress={() => {
-                            void tellAtoms(atom, 'dismiss').then(ok => { if (ok) setStatusMsg('It won’t resurface again. Turn it back on from its page in Atoms.'); });
-                          }}>
-                            <Text allowFontScaling={false} style={styles.resurfaceButtonText}>Don’t Resurface</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    ))
-                  )}
-                  </PlannerSection>
-                  ) : null}
                   <PlannerSection id="tomorrow" title="Tomorrow" summary={lookaheadSummary}>
                   {/* A calendar preview and direct route to tomorrow. Tasks are
                       already named and actionable in the section above. */}
@@ -7620,6 +7612,18 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
 
         </View>
       )}
+      {showResurface && <ResurfacePanel
+        atoms={resurfaceDue}
+        gapDays={atomsSummary?.resurfaceDays ?? 30}
+        message={resurfaceMessage}
+        onOpenSource={atom => void handleResurfaceOpen(atom)}
+        onNotNow={atom => {
+          void tellAtoms(atom, 'seen').then(ok => { if (ok) setResurfaceMessage('Set aside. It will come back after the usual gap.'); });
+        }}
+        onDismiss={atom => {
+          void tellAtoms(atom, 'dismiss').then(ok => { if (ok) setResurfaceMessage('It won’t resurface again. Turn it back on from its page in Atoms.'); });
+        }}
+        onClose={() => setShowResurface(false)} />}
       {bulkFileFeed && <BulkFilePanel
         calendarName={bulkFileFeed.name}
         items={unfiledFeedItems(bulkFileFeed)}
@@ -8358,13 +8362,12 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   dayProjectName: { flex: 1, fontSize: 12, fontWeight: 'bold', color: '#000000' },
-  // Resurface (ideas shared by Atoms): black on white, no colour meaning.
-  resurfaceItem: { borderBottomWidth: 1, borderBottomColor: '#bbbbbb', paddingHorizontal: 10, paddingVertical: 8 },
-  resurfaceTitle: { fontSize: 14, fontWeight: 'bold', color: '#000000' },
-  resurfaceMeta: { fontSize: 11, color: '#303030', marginTop: 2 },
-  resurfaceActions: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 },
-  resurfaceButton: { borderWidth: 2, borderColor: '#000000', backgroundColor: '#ffffff', minHeight: 40, paddingHorizontal: 10, justifyContent: 'center', marginRight: 6, marginBottom: 4 },
-  resurfaceButtonText: { fontSize: 12, fontWeight: 'bold', color: '#000000' },
+  // Resurface strip (ideas shared by Atoms): black on white, no colour meaning.
+  resurfaceStrip: { flexDirection: 'row', alignItems: 'center', borderWidth: 2, borderColor: '#000000', backgroundColor: '#ffffff', minHeight: 44, paddingHorizontal: 10, marginBottom: 8 },
+  resurfaceStripText: { flex: 1, fontSize: 14, fontWeight: 'bold', color: '#000000' },
+  resurfaceStripAction: { fontSize: 20, fontWeight: 'bold', color: '#000000', marginLeft: 8 },
+  resurfaceStripQuiet: { borderWidth: 1, borderColor: '#bbbbbb', minHeight: 36, paddingHorizontal: 10, justifyContent: 'center', marginBottom: 8 },
+  resurfaceStripQuietText: { fontSize: 12, color: '#303030' },
   dayProjectMeta: { fontSize: 11, color: '#303030', marginLeft: 8 },
   timeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   // Constrained rather than full width: a name and two short buttons do not
