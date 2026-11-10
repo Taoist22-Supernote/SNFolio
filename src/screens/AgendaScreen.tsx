@@ -153,7 +153,7 @@ function weeklyReviewNotePath(folder: string, date: Date, weekStartsOn: number):
 }
 
 import { DayScheduleGrid } from './DayScheduleGrid';
-import { hourLabel } from '../domain/dayGrid';
+import { fitHourHeight, hourLabel } from '../domain/dayGrid';
 import { ItemCreationModal } from './ItemCreationModal';
 import { EventDetailsModal } from './EventDetailsModal';
 import { DatePickerModal } from './DatePickerModal';
@@ -4569,6 +4569,17 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     } catch (e) {}
   };
 
+  // Manta Day Planner: fit the schedule grid to the screen (see the grid below).
+  const scheduleGridRef = useRef<View>(null);
+  const [scheduleSpace, setScheduleSpace] = useState<number | null>(null);
+  const fitScheduleToScreen = !isNomad && isWideScreen;
+  const measureScheduleSpace = () => {
+    scheduleGridRef.current?.measureInWindow((_x, y) => {
+      const space = Math.floor(Dimensions.get('window').height - y - SCHEDULE_BOTTOM_MARGIN);
+      if (space > 0 && space !== scheduleSpace) setScheduleSpace(space);
+    });
+  };
+
   const showingDayPlanner = viewMode === 'agenda' && plannerMode === 'day';
   // Settings needs the list too: its Atoms switch only appears when Atoms is in use.
   const needsAtomsList = showingDayPlanner || showSettings;
@@ -7398,6 +7409,13 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                     </TouchableOpacity>
                   </View>
 
+                  {/* On a Manta the grid's hours shrink to fit what is left of
+                      the screen, so the planner never scrolls (CT, 2026-11-10).
+                      Measured from where the grid actually starts. */}
+                  <View
+                    ref={scheduleGridRef}
+                    collapsable={false}
+                    onLayout={fitScheduleToScreen ? measureScheduleSpace : undefined}>
                   <DayScheduleGrid
                     events={events}
                     startHour={scheduleStartHour}
@@ -7407,7 +7425,13 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                     onNoteAction={dayGridHandlers.onNoteAction}
                     onDeleteEvent={dayGridHandlers.onDeleteEvent}
                     typeLabel={dayGridHandlers.typeLabel}
+                    hourHeight={fitScheduleToScreen && scheduleSpace ? fitHourHeight(
+                      scheduleSpace - events.filter(e => e.allDay).length * ALL_DAY_ROW_HEIGHT,
+                      scheduleStartHour,
+                      scheduleEndHour,
+                    ) : undefined}
                   />
+                  </View>
                   </PlannerSection>
                 </View>
 
@@ -7661,6 +7685,11 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     </EventDesignationsContext.Provider>
   );
 }
+
+/** Room kept below the Manta schedule grid: panel border and screen padding. */
+const SCHEDULE_BOTTOM_MARGIN = 24;
+/** An ALL DAY row above the grid, with its margin (DayScheduleGrid allDayRow). */
+const ALL_DAY_ROW_HEIGHT = 31;
 
 const styles = StyleSheet.create({
   root: {

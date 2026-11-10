@@ -16,6 +16,8 @@ interface DayScheduleGridProps {
   onDeleteEvent: (event: CalendarEvent) => void;
   /** Type label for an event, e.g. "🎓 Class". Empty when untyped. */
   typeLabel: (event: CalendarEvent) => string;
+  /** Height of one hour; defaults to 58. The Manta Day Planner fits it to the screen. */
+  hourHeight?: number;
 }
 
 /**
@@ -37,11 +39,12 @@ function DayScheduleGridInner({
   onNoteAction,
   onDeleteEvent,
   typeLabel,
+  hourHeight,
 }: DayScheduleGridProps): React.JSX.Element {
   const timeFormat = useTimeFormat();
-  // The grid grows with the hours chosen; the Day View already scrolls, so a
-  // longer day makes a taller page rather than a squashed one.
-  const options = { ...DEFAULT_DAY_GRID, startHour, endHour };
+  // The grid grows with the hours chosen, unless the caller fits it to the
+  // space it has (the Manta Day Planner, which must not scroll).
+  const options = { ...DEFAULT_DAY_GRID, startHour, endHour, ...(hourHeight ? { hourHeight } : {}) };
   const allDay = events.filter(e => e.allDay);
   const placed = placeEvents(events, options);
   const hours = gridHours(options);

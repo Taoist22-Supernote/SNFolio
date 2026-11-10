@@ -1,4 +1,4 @@
-import { DEFAULT_DAY_GRID, gridHeight, gridHours, hourLabel, placeEvents } from './dayGrid';
+import { DEFAULT_DAY_GRID, fitHourHeight, gridHeight, gridHours, hourLabel, placeEvents } from './dayGrid';
 import { CalendarEvent } from './types';
 
 const OPTS = { startHour: 8, endHour: 20, hourHeight: 44, minHeight: 30 };
@@ -144,5 +144,23 @@ describe('defaults', () => {
     // Below this a one-hour block cannot draw its contents without them
     // colliding inside a clipped box.
     expect(DEFAULT_DAY_GRID.hourHeight).toBeGreaterThanOrEqual(46);
+  });
+});
+
+describe('fitting the grid to the screen', () => {
+  it('shrinks the hours so 8 am to 8 pm fits the space left', () => {
+    // 13 slots (8..20 plus the trailing hour) into 520 points: 40 each.
+    expect(fitHourHeight(520, 8, 20)).toBe(40);
+    expect(gridHeight({ ...DEFAULT_DAY_GRID, startHour: 8, endHour: 20, hourHeight: fitHourHeight(520, 8, 20) })).toBeLessThanOrEqual(520);
+  });
+
+  it('never grows past the default, and never below the readable minimum', () => {
+    expect(fitHourHeight(5000, 8, 20)).toBe(58);
+    expect(fitHourHeight(100, 8, 20)).toBe(32);
+  });
+
+  it('falls back to the default when the space is unknown', () => {
+    expect(fitHourHeight(0, 8, 20)).toBe(58);
+    expect(fitHourHeight(NaN, 8, 20)).toBe(58);
   });
 });

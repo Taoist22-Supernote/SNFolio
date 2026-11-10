@@ -150,3 +150,23 @@ export function hourLabel(hour: number, format: TimeFormat = '12h'): string {
   const twelve = hour % 12 === 0 ? 12 : hour % 12;
   return `${twelve} ${suffix}`;
 }
+
+/**
+ * The hour height that makes the grid fill `availableHeight` exactly, so the
+ * Day Planner never has to scroll on a Manta (CT, 2026-11-10). Never taller
+ * than the default (more room just leaves space below) and never shorter than
+ * `min`, below which an hour label and a short event stop being readable.
+ * Event blocks already drop their meta line and action row when short, and
+ * tapping one still opens it.
+ */
+export function fitHourHeight(
+  availableHeight: number,
+  startHour: number,
+  endHour: number,
+  min = 32,
+  max = DEFAULT_DAY_GRID.hourHeight,
+): number {
+  const slots = Math.max(1, endHour - startHour + 1);
+  if (!Number.isFinite(availableHeight) || availableHeight <= 0) return max;
+  return Math.max(min, Math.min(max, Math.floor(availableHeight / slots)));
+}
