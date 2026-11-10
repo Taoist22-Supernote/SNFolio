@@ -7,7 +7,8 @@ export const PLANNER_SECTIONS = [
   ['tasks', 'Tasks'], ['projects', 'Projects'], ['tomorrow', 'Tomorrow'],
 ] as const;
 const WEEKLY_SECTIONS = [['thisweek', 'This Week'], ['projects', 'Projects'], ['deadlines', 'Deadlines'], ['journal', 'Journals']] as const;
-type SectionId = typeof PLANNER_SECTIONS[number][0] | 'deadlines' | 'thisweek';
+// 'resurface' has no shortcut: it only appears when the Atoms plugin shares ideas.
+type SectionId = typeof PLANNER_SECTIONS[number][0] | 'deadlines' | 'thisweek' | 'resurface';
 interface SectionContext {
   expanded: Partial<Record<SectionId, boolean>>;
   toggle: (id: SectionId) => void;

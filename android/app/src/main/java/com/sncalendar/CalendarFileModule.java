@@ -612,4 +612,65 @@ public class CalendarFileModule extends ReactContextBaseJavaModule {
             promise.reject("E_WRITE", error.getMessage(), error);
         }
     }
+
+    /**
+     * The folder shared with the Atoms plugin (see sn-atoms/docs/SNFOLIO-HANDOFF.md):
+     * inside the plugin host's own files folder, where Atoms writes resurface.json
+     * and SNFolio writes from-snfolio.json.
+     */
+    private File atomsSharedDir() {
+        return new File(getReactApplicationContext().getFilesDir(), "atoms-shared");
+    }
+
+    private static String atomsSharedName(String name) {
+        String base = name == null ? "" : name.replaceAll("[^A-Za-z0-9._-]", "_");
+        return base.isEmpty() ? "unnamed.json" : base;
+    }
+
+    /** Reads atoms-shared/<name>; resolves null when Atoms hasn't written it. */
+    @ReactMethod
+    public void readAtomsShared(String name, Promise promise) {
+        File file = new File(atomsSharedDir(), atomsSharedName(name));
+        try {
+            if (!file.isFile()) {
+                promise.resolve(null);
+                return;
+            }
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            try (InputStream input = new FileInputStream(file)) {
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = input.read(buffer)) != -1) bytes.write(buffer, 0, read);
+            }
+            promise.resolve(new String(bytes.toByteArray(), StandardCharsets.UTF_8));
+        } catch (Throwable error) {
+            promise.reject("E_ATOMS_READ", file.getAbsolutePath() + ": " + error.getMessage(), error);
+        }
+    }
+
+    /** Writes atoms-shared/<name> via temp-file-and-rename, so Atoms never reads half a file. */
+    @ReactMethod
+    public void writeAtomsShared(String name, String content, Promise promise) {
+        File dir = atomsSharedDir();
+        File file = new File(dir, atomsSharedName(name));
+        File temp = new File(dir, atomsSharedName(name) + ".new");
+        try {
+            if (!dir.isDirectory() && !dir.mkdirs()) {
+                promise.reject("E_ATOMS_WRITE", "Could not create " + dir.getAbsolutePath());
+                return;
+            }
+            try (FileOutputStream out = new FileOutputStream(temp, false)) {
+                out.write((content == null ? "" : content).getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                out.getFD().sync();
+            }
+            if (!temp.renameTo(file)) {
+                promise.reject("E_ATOMS_WRITE", "Could not replace " + file.getAbsolutePath());
+                return;
+            }
+            promise.resolve(file.getAbsolutePath());
+        } catch (Throwable error) {
+            promise.reject("E_ATOMS_WRITE", file.getAbsolutePath() + ": " + error.getMessage(), error);
+        }
+    }
 }

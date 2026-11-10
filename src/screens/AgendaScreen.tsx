@@ -97,7 +97,9 @@ import {
   taskSourceCollection,
   taskToCaldavItem,
 } from '../domain/taskSync';
-import { LASSO_BUTTON_ID, LASSO_PRESS_EVENT } from '../domain/buttonIds';
+import { LASSO_BUTTON_ID, LASSO_PRESS_EVENT, TOOLBAR_BUTTON_ID } from '../domain/buttonIds';
+import { dueResurfaceAtoms, sinceLabel, type AtomsAction, type ResurfaceAtom, type ResurfaceSummary } from '../domain/atomsResurface';
+import { openResurfaceSource, readAtomsResurface, recordAtomsAction } from '../supernote/atomsBridge';
 import { parseCapturedText, resolveDateOrder, ParsedCapture } from '../domain/captureParser';
 import { captureLassoText } from '../supernote/lassoCapture';
 import { MonthGridView } from './MonthGridView';
@@ -353,6 +355,11 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('sync');
   const settingsScrollRef = useRef<ScrollView>(null);
   const [statusMsg, setStatusMsg] = useState<string>('');
+  // Resurface ideas shared by the Atoms plugin (sn-atoms/docs/SNFOLIO-HANDOFF.md).
+  // Null summary = Atoms hasn't shared anything, so the section stays hidden.
+  const [atomsSummary, setAtomsSummary] = useState<ResurfaceSummary | null>(null);
+  const [atomsActions, setAtomsActions] = useState<AtomsAction[]>([]);
+  const [atomsRefresh, setAtomsRefresh] = useState(0);
   const [syncPhase, setSyncPhase] = useState<'idle' | 'syncing' | 'success' | 'partial' | 'error'>('idle');
   const [lastSuccessfulSync, setLastSuccessfulSync] = useState<string>('');
   const [syncDetails, setSyncDetails] = useState<string[]>([]);
@@ -552,6 +559,12 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
             // The SDK sends { id, name, icon, pressEvent }. The previous guard
             // tested msg.action and msg.buttonId — neither field exists, so it
             // returned on every press and the handler never ran.
+            // The panel never unmounts, so a toolbar press is the signal to
+            // re-read what Atoms has shared since last time.
+            if (msg && msg.id === TOOLBAR_BUTTON_ID) {
+              setAtomsRefresh(n => n + 1);
+              return;
+            }
             if (!msg || msg.id !== LASSO_BUTTON_ID || msg.pressEvent !== LASSO_PRESS_EVENT) {
               return;
             }
@@ -4552,6 +4565,41 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     } catch (e) {}
   };
 
+  const showingDayPlanner = viewMode === 'agenda' && plannerMode === 'day';
+  useEffect(() => {
+    if (!showingDayPlanner) return;
+    let live = true;
+    readAtomsResurface().then(read => {
+      if (!live) return;
+      setAtomsSummary(read.summary);
+      setAtomsActions(read.actions);
+    });
+    return () => {
+      live = false;
+    };
+  }, [showingDayPlanner, atomsRefresh, selectedDate]);
+
+  const resurfaceDue: ResurfaceAtom[] = dueResurfaceAtoms(atomsSummary, atomsActions, Date.now());
+
+  /** Records a Day Planner tap for Atoms; the idea drops out here at once. */
+  const tellAtoms = async (atom: ResurfaceAtom, action: 'seen' | 'dismiss'): Promise<boolean> => {
+    const next = await recordAtomsAction(atom.id, action);
+    if (!next) {
+      setStatusMsg('Could not pass that on to Atoms. Open Atoms and set it there instead.');
+      return false;
+    }
+    setAtomsActions(next);
+    return true;
+  };
+
+  const handleResurfaceOpen = trackWorkspaceOperation(async (atom: ResurfaceAtom) => {
+    await tellAtoms(atom, 'seen');
+    await prepareForNativeFileOpen();
+    const res = await openResurfaceSource(atom);
+    setStatusMsg(res.message);
+    if (res.success) closePanel();
+  });
+
   /**
    * Removes any source-note selection/recognizer state before changing files.
    *
@@ -7483,6 +7531,44 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                   )}
 
                   </PlannerSection>
+                  {atomsSummary ? (
+                  <PlannerSection
+                    id="resurface"
+                    title="Resurface"
+                    summary={resurfaceDue.length ? `${resurfaceDue.length} idea(s) from Atoms` : 'Nothing to resurface today'}>
+                  {!isNomad && (<View style={styles.subHeader}>
+                    <Text allowFontScaling={false} style={styles.subHeaderText}>💡 RESURFACE</Text>
+                    <Text allowFontScaling={false} style={styles.subHeaderMeta}>Ideas from Atoms you haven’t opened in a while</Text>
+                  </View>)}
+                  {resurfaceDue.length === 0 ? (
+                    <Text allowFontScaling={false} style={styles.panelEmpty}>Nothing to resurface today.</Text>
+                  ) : (
+                    resurfaceDue.map(atom => (
+                      <View key={atom.id} style={styles.resurfaceItem}>
+                        <Text allowFontScaling={false} style={styles.resurfaceTitle} numberOfLines={2}>{atom.title}</Text>
+                        <Text allowFontScaling={false} style={styles.resurfaceMeta} numberOfLines={1}>
+                          {`${atom.source.title} · p. ${atom.source.page + 1} · not opened in ${sinceLabel(atom.lastSeen, Date.now())}`}
+                        </Text>
+                        <View style={styles.resurfaceActions}>
+                          <TouchableOpacity style={styles.resurfaceButton} onPress={() => void handleResurfaceOpen(atom)}>
+                            <Text allowFontScaling={false} style={styles.resurfaceButtonText}>Open Source</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.resurfaceButton} onPress={() => {
+                            void tellAtoms(atom, 'seen').then(ok => { if (ok) setStatusMsg('Set aside. It will come back after the usual gap.'); });
+                          }}>
+                            <Text allowFontScaling={false} style={styles.resurfaceButtonText}>Not Now</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.resurfaceButton} onPress={() => {
+                            void tellAtoms(atom, 'dismiss').then(ok => { if (ok) setStatusMsg('It won’t resurface again. Turn it back on from its page in Atoms.'); });
+                          }}>
+                            <Text allowFontScaling={false} style={styles.resurfaceButtonText}>Don’t Resurface</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))
+                  )}
+                  </PlannerSection>
+                  ) : null}
                   <PlannerSection id="tomorrow" title="Tomorrow" summary={lookaheadSummary}>
                   {/* A calendar preview and direct route to tomorrow. Tasks are
                       already named and actionable in the section above. */}
@@ -8273,6 +8359,13 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   dayProjectName: { flex: 1, fontSize: 12, fontWeight: 'bold', color: '#000000' },
+  // Resurface (ideas shared by Atoms): black on white, no colour meaning.
+  resurfaceItem: { borderBottomWidth: 1, borderBottomColor: '#bbbbbb', paddingHorizontal: 10, paddingVertical: 8 },
+  resurfaceTitle: { fontSize: 14, fontWeight: 'bold', color: '#000000' },
+  resurfaceMeta: { fontSize: 11, color: '#303030', marginTop: 2 },
+  resurfaceActions: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 6 },
+  resurfaceButton: { borderWidth: 2, borderColor: '#000000', backgroundColor: '#ffffff', minHeight: 40, paddingHorizontal: 10, justifyContent: 'center', marginRight: 6, marginBottom: 4 },
+  resurfaceButtonText: { fontSize: 12, fontWeight: 'bold', color: '#000000' },
   dayProjectMeta: { fontSize: 11, color: '#303030', marginLeft: 8 },
   timeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
   // Constrained rather than full width: a name and two short buttons do not
