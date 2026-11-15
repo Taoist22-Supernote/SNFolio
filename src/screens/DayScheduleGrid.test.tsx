@@ -164,3 +164,33 @@ describe('work blocks on the schedule', () => {
     expect(text).not.toContain('⏱ Replan');
   });
 });
+
+describe('clash marker', () => {
+  const overMeeting = withSession(
+    { uid: 'clash', title: 'Read chapter', completed: false, status: 'todo', createdAt: at(7) },
+    at(10, 30),
+    60,
+  );
+
+  test('a block running into an event says CLASH, and the other block does not', () => {
+    const tree = render(at(8), { workBlocks: workBlocksForDay([overMeeting, essay], at(0)) });
+    const text = textOf(tree);
+    expect(text).toContain('CLASH · ');
+    expect(text.split('CLASH').length - 1).toBe(1);
+    const labelled = tree.root.findAll(node => node.type === Text
+      && node.props.accessibilityLabel === 'Read chapter, clashes with Team meeting');
+    expect(labelled.length).toBeGreaterThan(0);
+  });
+
+  test('in progress shows both NOW and CLASH; once missed, only MISSED', () => {
+    const blocks = workBlocksForDay([overMeeting], at(0));
+    expect(textOf(render(at(10, 45), { workBlocks: blocks }))).toContain('▶ NOW · CLASH · ');
+    const missed = textOf(render(at(12), { workBlocks: blocks }));
+    expect(missed).toContain('MISSED · ');
+    expect(missed).not.toContain('CLASH');
+  });
+
+  test('no events in the way, no marker', () => {
+    expect(textOf(render(at(8), { events: [] }))).not.toContain('CLASH');
+  });
+});

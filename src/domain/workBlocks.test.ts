@@ -1,4 +1,5 @@
 import {
+  blockClashes,
   findSession,
   hasWorkTime,
   isWorkBlockUid,
@@ -271,5 +272,38 @@ describe('loading stored tasks', () => {
     expect(reviveWorkSessions({})).toBeUndefined();
     expect(reviveWorkSessions({ workSessions: [{ id: 's1', start: at(9).toISOString(), minutes: -5 }] }))
       .toEqual([{ id: 's1', start: at(9), minutes: 60 }]);
+  });
+});
+
+describe('clashes marked on a block', () => {
+  const meeting = event('Team meeting', at(10), at(11));
+  const essay = planned('essay', [at(10, 30)], 60, { title: 'Essay' });
+  const reading = planned('reading', [at(14)], 60, { title: 'Reading' });
+  const blocks = workBlocksForDay([essay, reading], DAY);
+  const [essayBlock, readingBlock] = blocks;
+
+  test('a block running into an event clashes; one in a free hour does not', () => {
+    expect(blockClashes(essayBlock, [meeting], blocks, at(8)).map(b => b.title)).toEqual(['Team meeting']);
+    expect(blockClashes(readingBlock, [meeting], blocks, at(8))).toEqual([]);
+  });
+
+  test('two sessions on top of each other both clash, and a block never clashes with itself', () => {
+    const other = planned('other', [at(14, 30)], 60, { title: 'Other' });
+    const both = workBlocksForDay([reading, other], DAY);
+    expect(blockClashes(both[0], [], both, at(8)).map(b => b.title)).toEqual(['Other']);
+    expect(blockClashes(both[1], [], both, at(8)).map(b => b.title)).toEqual(['Reading']);
+    expect(blockClashes(readingBlock, [], [readingBlock], at(8))).toEqual([]);
+  });
+
+  test('in progress is still marked; missed and ticked blocks are not', () => {
+    expect(blockClashes(essayBlock, [meeting], blocks, at(10, 45))).toHaveLength(1);
+    expect(blockClashes(essayBlock, [meeting], blocks, at(12))).toEqual([]);
+    const ticked = withSessionDone(essay, 's1', true);
+    expect(blockClashes({ task: ticked, session: findSession(ticked, 's1')! }, [meeting], blocks, at(8))).toEqual([]);
+  });
+
+  test('an all-day event is no clash', () => {
+    const holiday = event('Holiday', at(0), at(0, 0, WED), { allDay: true });
+    expect(blockClashes(readingBlock, [holiday], blocks, at(8))).toEqual([]);
   });
 });

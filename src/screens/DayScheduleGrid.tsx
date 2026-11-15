@@ -6,6 +6,7 @@ import { CalendarEvent, CalendarTask } from '../domain/types';
 import { DEFAULT_DAY_GRID, gridHeight, gridHours, hourLabel, placeEvents } from '../domain/dayGrid';
 import { isDone, statusGlyph } from '../domain/taskModel';
 import {
+  blockClashes,
   isWorkBlockUid,
   sessionKey,
   sessionKeyOfWorkBlock,
@@ -155,7 +156,10 @@ function DayScheduleGridInner({
             // The state rides in the title line, which every block has room
             // for; a one-hour block is too short for the meta line, and the
             // cue is the point of the block.
-            const stateLabel = STATE_LABEL[state];
+            // CLASH rides in the same place as NOW, for the same reason: it
+            // is the cue, and every block has room for its title line.
+            const clashes = blockClashes(block, events, workBlocks, clock);
+            const stateLabel = [STATE_LABEL[state], clashes.length > 0 ? 'CLASH' : ''].filter(Boolean).join(' · ');
             const meta = taskMeta?.(task) ?? '';
             return (
               <View
@@ -189,6 +193,9 @@ function DayScheduleGridInner({
                       allowFontScaling={false}
                       style={[styles.blockTitle, inverted && styles.workTextNow, state === 'done' && styles.workTitleDone]}
                       numberOfLines={1}
+                      accessibilityLabel={clashes.length > 0
+                        ? `${task.title}, clashes with ${clashes.map(c => c.title).join(' and ')}`
+                        : undefined}
                     >
                       {stateLabel ? <Text style={styles.workState}>{`${stateLabel} · `}</Text> : null}
                       <LinkedFileMarker item={task} />{task.title}

@@ -238,6 +238,22 @@ export function workOverlaps(
 }
 
 /**
+ * What a block on the Schedule clashes with: the same check as the planner's
+ * warning, so a clash that arrives after planning (a CalDAV sync, a class
+ * added later) is marked on the block rather than only drawn side by side.
+ * Only a block still to do or in progress is marked: a finished one is no
+ * longer a plan, and a missed one already says MISSED.
+ */
+export function blockClashes(block: WorkBlock, events: CalendarEvent[], blocks: WorkBlock[], now: Date): BusySpan[] {
+  const state = workBlockState(block, now);
+  if (state !== 'planned' && state !== 'now') {
+    return [];
+  }
+  const tasks = [...new Map(blocks.map(b => [b.task.uid, b.task])).values()];
+  return workOverlaps(block.session.start, minutesOf(block.session), events, tasks, sessionKey(block.task.uid, block.session.id));
+}
+
+/**
  * The first gap on `day` long enough for `minutes` of work.
  *
  * Starts at the top of the visible grid, or at the next quarter hour if the
