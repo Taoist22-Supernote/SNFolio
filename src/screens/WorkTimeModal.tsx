@@ -3,8 +3,8 @@ import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { DatePickerModal } from './DatePickerModal';
 import { TimePickerModal } from './TimePickerModal';
 import { useTimeFormat } from './TimeFormatContext';
-import { formatDateTime, formatDuration, formatTimeOfDay, minutesFromDate, withTimeOfDay } from '../domain/timeOfDay';
-import { hasWorkTime, WORK_DURATIONS, workMinutesOf } from '../domain/workBlocks';
+import { formatDateTime, formatDuration, formatTimeOfDay, minutesFromDate, TimeFormat, withTimeOfDay } from '../domain/timeOfDay';
+import { BusySpan, hasWorkTime, WORK_DURATIONS, workMinutesOf } from '../domain/workBlocks';
 import { CalendarTask } from '../domain/types';
 
 interface WorkTimeModalProps {
@@ -21,6 +21,11 @@ interface WorkTimeModalProps {
   suggestedStart: Date;
   /** Recomputes the suggestion when the day or length changes. */
   suggestFor?: (day: Date, minutes: number) => Date;
+  /**
+   * What the chosen time would run into: events and other planned tasks on
+   * that day. Shown as a warning; saving is still allowed.
+   */
+  overlapsFor?: (start: Date, minutes: number) => BusySpan[];
   weekStartsOn?: number;
   onSave: (task: CalendarTask, start: Date, minutes: number) => void;
   onClear: (task: CalendarTask) => void;
@@ -38,6 +43,7 @@ export function WorkTimeModal({
   task,
   suggestedStart,
   suggestFor,
+  overlapsFor,
   weekStartsOn,
   onSave,
   onClear,
@@ -64,6 +70,7 @@ export function WorkTimeModal({
   };
 
   const endMinutes = minutesFromDate(start) + minutes;
+  const overlaps = overlapsFor?.(start, minutes) ?? [];
   const dayLabel = start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
   return (
@@ -118,6 +125,13 @@ export function WorkTimeModal({
           <Text allowFontScaling={false} style={styles.hint}>
             {formatTimeOfDay(minutesFromDate(start), timeFormat)} – {formatTimeOfDay(endMinutes, timeFormat)} · {formatDuration(minutes)}
           </Text>
+          {/* A clash is allowed, but no longer silent. Bold and boxed rather
+              than coloured: e-ink has no red. */}
+          {overlaps.length > 0 && (
+            <Text allowFontScaling={false} style={styles.overlapWarning}>
+              {overlapMessage(overlaps, timeFormat)}
+            </Text>
+          )}
 
           <View style={styles.actions}>
             {planned ? (
@@ -153,6 +167,18 @@ export function WorkTimeModal({
   );
 }
 
+/** Shown in full up to this many; the rest become "and N more". */
+const OVERLAPS_NAMED = 2;
+
+export function overlapMessage(overlaps: BusySpan[], timeFormat: TimeFormat): string {
+  const named = overlaps.slice(0, OVERLAPS_NAMED).map(span => {
+    const time = `${formatTimeOfDay(span.startMinute, timeFormat)}–${formatTimeOfDay(span.endMinute, timeFormat)}`;
+    return span.isWork ? `${span.title} (planned, ${time})` : `${span.title} (${time})`;
+  });
+  const more = overlaps.length - named.length;
+  return `Overlaps ${named.join(' and ')}${more > 0 ? ` and ${more} more` : ''}. You can still save.`;
+}
+
 const styles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', justifyContent: 'center', alignItems: 'center' },
   content: { backgroundColor: '#ffffff', borderWidth: 2, borderColor: '#000000', borderRadius: 8, padding: 14, width: 420, maxWidth: '94%' },
@@ -169,6 +195,10 @@ const styles = StyleSheet.create({
   chipSelected: { backgroundColor: '#000000' },
   chipText: { fontSize: 14, color: '#000000' },
   chipTextSelected: { color: '#ffffff', fontWeight: 'bold' },
+  overlapWarning: {
+    fontSize: 13, fontWeight: 'bold', color: '#000000', marginTop: 8,
+    borderWidth: 1, borderColor: '#000000', paddingHorizontal: 8, paddingVertical: 6,
+  },
   hint: { fontSize: 12, color: '#505050', marginTop: 4 },
   actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16 },
   primaryBtn: { backgroundColor: '#000000', borderRadius: 4, paddingHorizontal: 16, minHeight: 46, justifyContent: 'center' },

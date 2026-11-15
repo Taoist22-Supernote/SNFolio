@@ -98,6 +98,57 @@ export function workBlockState(task: CalendarTask, now: Date): WorkBlockState {
   return 'planned';
 }
 
+/** Something that already claims time on a day, in minutes from midnight. */
+export interface BusySpan {
+  title: string;
+  startMinute: number;
+  endMinute: number;
+  /** True for another task's work block, false for an event. */
+  isWork: boolean;
+}
+
+/**
+ * What already claims time on `day`: timed events and other open work blocks.
+ * All-day events claim no hours, and a finished block is no longer a plan, so
+ * neither counts. Shared by the first-free-slot search and the overlap
+ * warning, so the planner never suggests a slot it then warns about.
+ */
+function busyOnDay(day: Date, events: CalendarEvent[], tasks: CalendarTask[], ignoreTaskUid?: string): BusySpan[] {
+  const busy: BusySpan[] = [];
+  for (const event of events) {
+    if (event.allDay || !isSameDay(event.start, day)) continue;
+    const s = minutesFromDate(event.start);
+    const e = isSameDay(event.end, day) ? minutesFromDate(event.end) : 24 * 60;
+    busy.push({ title: event.summary, startMinute: s, endMinute: Math.max(e, s + TIME_STEP), isWork: false });
+  }
+  for (const task of workBlocksForDay(tasks, day)) {
+    if (task.uid === ignoreTaskUid || isDone(task)) continue;
+    const s = minutesFromDate(task.workStart as Date);
+    busy.push({ title: task.title, startMinute: s, endMinute: s + workMinutesOf(task), isWork: true });
+  }
+  return busy;
+}
+
+/**
+ * What a planned block at `start` for `minutes` would collide with, earliest
+ * first. The planner warns with this but still saves (CT, 2026-11-15): the
+ * grid already draws a clash side by side, so it is allowed, just no longer
+ * silent.
+ */
+export function workOverlaps(
+  start: Date,
+  minutes: number,
+  events: CalendarEvent[],
+  tasks: CalendarTask[],
+  ignoreTaskUid?: string,
+): BusySpan[] {
+  const from = minutesFromDate(start);
+  const to = from + minutes;
+  return busyOnDay(start, events, tasks, ignoreTaskUid)
+    .filter(b => from < b.endMinute && b.startMinute < to)
+    .sort((a, b) => a.startMinute - b.startMinute || a.title.localeCompare(b.title));
+}
+
 /**
  * The first gap on `day` long enough for `minutes` of work.
  *
@@ -125,18 +176,7 @@ export function suggestWorkStart(
   }
   const latestEnd = Math.min(24 * 60, Math.max(earliest + minutes, (endHour + 1) * 60));
 
-  const busy: Array<[number, number]> = [];
-  for (const event of events) {
-    if (event.allDay || !isSameDay(event.start, day)) continue;
-    const s = minutesFromDate(event.start);
-    const e = isSameDay(event.end, day) ? minutesFromDate(event.end) : 24 * 60;
-    busy.push([s, Math.max(e, s + TIME_STEP)]);
-  }
-  for (const task of workBlocksForDay(tasks, day)) {
-    if (task.uid === ignoreTaskUid || isDone(task)) continue;
-    const s = minutesFromDate(task.workStart as Date);
-    busy.push([s, s + workMinutesOf(task)]);
-  }
+  const busy = busyOnDay(day, events, tasks, ignoreTaskUid).map(b => [b.startMinute, b.endMinute]);
 
   for (let start = earliest; start + minutes <= latestEnd; start += TIME_STEP) {
     const end = start + minutes;

@@ -6,6 +6,7 @@ import {
   workBlockEvent,
   workBlocksForDay,
   workBlockState,
+  workOverlaps,
   workTimeLabel,
   withoutWorkTime,
   withWorkTime,
@@ -108,6 +109,46 @@ describe('suggesting a slot', () => {
   test('a full day still offers somewhere to start', () => {
     const events = [event('conference', at(0), at(23, 59))];
     expect(suggestWorkStart(DAY, events, [], 60, now)).toEqual(at(8));
+  });
+});
+
+describe('what a planned block would overlap', () => {
+  const events = [
+    event('Team meeting', at(10), at(11)),
+    event('Lunch', at(12), at(13)),
+    event('Holiday', at(0), at(0, 0, new Date(2026, 10, 18)), { allDay: true }),
+    event('Tomorrow class', at(10, 0, new Date(2026, 10, 18)), at(11, 0, new Date(2026, 10, 18))),
+  ];
+
+  test('timed events the block runs into, earliest first', () => {
+    const found = workOverlaps(at(10, 30), 120, events, []);
+    expect(found.map(b => b.title)).toEqual(['Team meeting', 'Lunch']);
+    expect(found[0]).toMatchObject({ startMinute: 600, endMinute: 660, isWork: false });
+  });
+
+  test('touching end to start is not an overlap', () => {
+    expect(workOverlaps(at(11), 60, events, [])).toEqual([]);
+    expect(workOverlaps(at(9), 60, events, [])).toEqual([]);
+  });
+
+  test('all-day events and other days are ignored', () => {
+    expect(workOverlaps(at(8), 60, events, [])).toEqual([]);
+  });
+
+  test('other open work blocks count, but not a finished one or the task itself', () => {
+    const tasks = [
+      withWorkTime(task('reading', { title: 'Chapter 9 reading' }), at(14), 60),
+      withWorkTime(task('done', { completed: true, status: 'done' }), at(14), 60),
+      withWorkTime(task('essay'), at(14), 60),
+    ];
+    const found = workOverlaps(at(14, 30), 60, [], tasks, 'essay');
+    expect(found).toEqual([{ title: 'Chapter 9 reading', startMinute: 840, endMinute: 900, isWork: true }]);
+  });
+
+  test('the suggested slot never overlaps anything', () => {
+    const tasks = [withWorkTime(task('reading'), at(9, 30), 60)];
+    const start = suggestWorkStart(DAY, events, tasks, 90, at(6));
+    expect(workOverlaps(start, 90, events, tasks)).toEqual([]);
   });
 });
 

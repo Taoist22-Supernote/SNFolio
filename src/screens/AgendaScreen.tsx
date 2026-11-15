@@ -185,7 +185,7 @@ import {
 import { firstPickedFilePath, parentFolderFromPicker } from '../domain/fileSelection';
 import { cleanRelativeNoteSubpath, paraEventNoteFolder } from '../domain/eventNoteRouting';
 import { areaArchiveState, projectArchiveState } from '../domain/paraArchive';
-import { hasWorkTime, suggestWorkStart, withoutWorkTime, withWorkTime, workBlocksForDay, workTimeLabel } from '../domain/workBlocks';
+import { hasWorkTime, suggestWorkStart, withoutWorkTime, withWorkTime, workBlocksForDay, workOverlaps, workTimeLabel } from '../domain/workBlocks';
 import { WorkTimeModal } from './WorkTimeModal';
 
 type SettingsTab = 'sync' | 'notes' | 'app' | 'help';
@@ -3014,10 +3014,12 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   };
 
   /** First free slot on a day, for the planner to open on. */
-  const suggestWorkSlot = (day: Date, minutes: number, ignoreUid?: string): Date => {
-    const dayEvents = isSameCalendarDay(day, selectedDate) ? events : expandEventsForDate(visibleEvents, day);
-    return suggestWorkStart(day, dayEvents, calendarStorage.getTasks(), minutes, new Date(), scheduleStartHour, scheduleEndHour, ignoreUid);
-  };
+  const eventsOnDay = (day: Date): CalendarEvent[] =>
+    isSameCalendarDay(day, selectedDate) ? events : expandEventsForDate(visibleEvents, day);
+  const suggestWorkSlot = (day: Date, minutes: number, ignoreUid?: string): Date =>
+    suggestWorkStart(day, eventsOnDay(day), calendarStorage.getTasks(), minutes, new Date(), scheduleStartHour, scheduleEndHour, ignoreUid);
+  const workSlotOverlaps = (start: Date, minutes: number, ignoreUid?: string) =>
+    workOverlaps(start, minutes, eventsOnDay(start), calendarStorage.getTasks(), ignoreUid);
 
   /** Same rule as events: a task with a linked note asks first, and the note is always kept. */
   const requestDeleteTask = (task: CalendarTask) => {
@@ -6978,6 +6980,7 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                 planningTask.uid,
               )}
               suggestFor={(day, minutes) => suggestWorkSlot(day, minutes, planningTask.uid)}
+              overlapsFor={(start, minutes) => workSlotOverlaps(start, minutes, planningTask.uid)}
               weekStartsOn={weekStartsOn}
               onSave={handleSaveWorkTime}
               onClear={handleUnplanTask}

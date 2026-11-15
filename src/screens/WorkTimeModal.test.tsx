@@ -1,8 +1,8 @@
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { Text, TouchableOpacity } from 'react-native';
-import { WorkTimeModal } from './WorkTimeModal';
-import { withWorkTime } from '../domain/workBlocks';
+import { overlapMessage, WorkTimeModal } from './WorkTimeModal';
+import { BusySpan, withWorkTime } from '../domain/workBlocks';
 import { CalendarTask } from '../domain/types';
 
 const at = (hour: number, minute = 0) => new Date(2026, 10, 17, hour, minute);
@@ -61,4 +61,38 @@ test('a planned task opens on its own time and can come off the schedule', () =>
   expect(onSave).toHaveBeenCalledWith(planned, at(14), 45);
   press(tree, 'Take off schedule');
   expect(onClear).toHaveBeenCalledWith(planned);
+});
+
+describe('overlap warning', () => {
+  const meeting: BusySpan = { title: 'Team meeting', startMinute: 600, endMinute: 660, isWork: false };
+  const reading: BusySpan = { title: 'Chapter 9 reading', startMinute: 630, endMinute: 690, isWork: true };
+  const lunch: BusySpan = { title: 'Lunch', startMinute: 720, endMinute: 780, isWork: false };
+
+  test('names what the time runs into and says saving is still allowed', () => {
+    const tree = render(essay, { overlapsFor: () => [meeting] });
+    expect(textOf(tree)).toContain('Overlaps Team meeting (10:00 AM–11:00 AM). You can still save.');
+  });
+
+  test('says nothing when the time is free', () => {
+    expect(textOf(render(essay, { overlapsFor: () => [] }))).not.toContain('Overlaps');
+    expect(textOf(render(essay))).not.toContain('Overlaps');
+  });
+
+  test('re-checks when the length changes, and saving still works', () => {
+    const onSave = jest.fn();
+    const overlapsFor = jest.fn((start: Date, minutes: number) => (minutes > 60 ? [meeting] : []));
+    const tree = render(essay, { overlapsFor, onSave, suggestedStart: at(9) });
+    expect(textOf(tree)).not.toContain('Overlaps');
+    press(tree, '2h');
+    expect(textOf(tree)).toContain('Overlaps Team meeting');
+    press(tree, 'Put on schedule');
+    expect(onSave).toHaveBeenCalledWith(essay, at(9), 120);
+  });
+
+  test('another planned task is called planned, and a long list is cut short', () => {
+    expect(overlapMessage([meeting, reading, lunch], '12h')).toBe(
+      'Overlaps Team meeting (10:00 AM–11:00 AM) and Chapter 9 reading (planned, 10:30 AM–11:30 AM) and 1 more. You can still save.',
+    );
+    expect(overlapMessage([meeting], '24h')).toBe('Overlaps Team meeting (10:00–11:00). You can still save.');
+  });
 });
