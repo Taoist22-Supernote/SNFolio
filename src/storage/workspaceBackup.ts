@@ -82,7 +82,7 @@ export function validateWorkspaceData(data: any): asserts data is WorkspaceData 
       requireValid(typeof id === 'string' && !!id && !ids.has(id), `${field} identifier`);
       ids.add(id);
       requireValid(typeof item[isEvent ? 'summary' : field === 'tasks' ? 'title' : 'name'] === 'string', `${field} title`);
-      for (const key of ['start', 'end', 'createdAt', 'dueDate', 'completedAt', 'recurrenceId', 'classStartDate']) {
+      for (const key of ['start', 'end', 'createdAt', 'dueDate', 'workStart', 'completedAt', 'recurrenceId', 'classStartDate']) {
         if (item[key] !== undefined) requireValid(date(item[key]), `${field}.${key}`);
       }
       if (isEvent) {

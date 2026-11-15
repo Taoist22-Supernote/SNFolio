@@ -206,6 +206,7 @@ function reviveTask(raw: any): CalendarTask {
   return {
     ...raw,
     dueDate: raw.dueDate ? new Date(raw.dueDate) : undefined,
+    workStart: raw.workStart ? new Date(raw.workStart) : undefined,
     completedAt: raw.completedAt ? new Date(raw.completedAt) : undefined,
     createdAt: raw.createdAt ? new Date(raw.createdAt) : new Date(),
     caldavCollectionUrl: raw.caldavCollectionUrl || inferTaskCollectionUrl(raw.caldavUrl),

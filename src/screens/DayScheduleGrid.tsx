@@ -2,8 +2,16 @@ import { isPdfPath, LinkedFileMarker } from './LinkedFileMarker';
 import { useTimeFormat } from './TimeFormatContext';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { CalendarEvent } from '../domain/types';
+import { CalendarEvent, CalendarTask } from '../domain/types';
 import { DEFAULT_DAY_GRID, gridHeight, gridHours, hourLabel, placeEvents } from '../domain/dayGrid';
+import { statusGlyph, taskStatus } from '../domain/taskModel';
+import {
+  isWorkBlockUid,
+  taskUidOfWorkBlock,
+  workBlockEvent,
+  WorkBlockState,
+  workBlockState,
+} from '../domain/workBlocks';
 
 interface DayScheduleGridProps {
   events: CalendarEvent[];
@@ -18,7 +26,26 @@ interface DayScheduleGridProps {
   typeLabel: (event: CalendarEvent) => string;
   /** Height of one hour; defaults to 58. The Manta Day Planner fits it to the screen. */
   hourHeight?: number;
+  /** Tasks with a work time on this day, drawn as blocks among the events. */
+  workTasks?: CalendarTask[];
+  /** The clock the blocks are judged against: Now, Missed. */
+  now?: Date;
+  onToggleTask?: (task: CalendarTask) => void;
+  onEditTask?: (task: CalendarTask) => void;
+  /** Move the block: opens the planner on it. */
+  onPlanTask?: (task: CalendarTask) => void;
+  /** Take the task off the schedule; its deadline is untouched. */
+  onUnplanTask?: (task: CalendarTask) => void;
+  /** Short context for a task block, e.g. "due Fri". */
+  taskMeta?: (task: CalendarTask) => string;
 }
+
+const STATE_LABEL: Record<WorkBlockState, string> = {
+  now: '▶ NOW',
+  missed: 'MISSED',
+  done: '',
+  planned: '',
+};
 
 /**
  * The day as a grid of hours rather than a list of rows.
@@ -40,13 +67,24 @@ function DayScheduleGridInner({
   onDeleteEvent,
   typeLabel,
   hourHeight,
+  workTasks = [],
+  now,
+  onToggleTask,
+  onEditTask,
+  onPlanTask,
+  onUnplanTask,
+  taskMeta,
 }: DayScheduleGridProps): React.JSX.Element {
   const timeFormat = useTimeFormat();
   // The grid grows with the hours chosen, unless the caller fits it to the
   // space it has (the Manta Day Planner, which must not scroll).
   const options = { ...DEFAULT_DAY_GRID, startHour, endHour, ...(hourHeight ? { hourHeight } : {}) };
   const allDay = events.filter(e => e.allDay);
-  const placed = placeEvents(events, options);
+  // Work blocks go through the same placement as events, so a task planned
+  // over a meeting splits the hour with it instead of hiding beneath it.
+  const workByUid = new Map(workTasks.map(task => [task.uid, task]));
+  const placed = placeEvents([...events, ...workTasks.map(workBlockEvent)], options);
+  const clock = now ?? new Date();
   const hours = gridHours(options);
   const height = gridHeight(options);
 
@@ -83,22 +121,88 @@ function DayScheduleGridInner({
             width, so a full-width block overhung the right edge by the gutter. */}
         <View style={styles.blockLayer} pointerEvents="box-none">
         {placed.map(({ event, top, height: blockHeight, column, columns }) => {
-          const existingPath = notePaths[event.uid];
           // Columns share the track width; a single event takes all of it.
           const widthPercent = 100 / columns;
+          const position = {
+            top,
+            height: blockHeight,
+            left: `${column * widthPercent}%` as const,
+            width: `${widthPercent}%` as const,
+          };
+
+          if (isWorkBlockUid(event.uid)) {
+            const task = workByUid.get(taskUidOfWorkBlock(event.uid));
+            if (!task) return null;
+            const state = workBlockState(task, clock);
+            const inverted = state === 'now';
+            // The state rides in the title line, which every block has room
+            // for; a one-hour block is too short for the meta line, and the
+            // cue is the point of the block.
+            const stateLabel = STATE_LABEL[state];
+            const meta = taskMeta?.(task) ?? '';
+            return (
+              <View
+                key={event.uid}
+                style={[
+                  styles.block,
+                  styles.workBlock,
+                  state === 'missed' && styles.workBlockMissed,
+                  state === 'done' && styles.workBlockDone,
+                  inverted && styles.workBlockNow,
+                  position,
+                ]}
+              >
+                <View style={styles.workTitleRow}>
+                  <TouchableOpacity
+                    onPress={() => onToggleTask?.(task)}
+                    accessibilityLabel={`${state === 'done' ? 'Reopen' : 'Complete'} ${task.title}`}
+                  >
+                    <Text allowFontScaling={false} style={[styles.workCheck, inverted && styles.workTextNow]}>
+                      {statusGlyph(taskStatus(task))}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.blockBody} onPress={() => onEditTask?.(task)}>
+                    <Text
+                      allowFontScaling={false}
+                      style={[styles.blockTitle, inverted && styles.workTextNow, state === 'done' && styles.workTitleDone]}
+                      numberOfLines={1}
+                    >
+                      {stateLabel ? <Text style={styles.workState}>{`${stateLabel} · `}</Text> : null}
+                      <LinkedFileMarker item={task} />{task.title}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {blockHeight >= META_MIN_HEIGHT && meta ? (
+                  <Text allowFontScaling={false} style={[styles.blockMeta, inverted && styles.workTextNow]} numberOfLines={1}>
+                    {meta}
+                  </Text>
+                ) : null}
+                {blockHeight >= ACTIONS_MIN_HEIGHT && state !== 'done' && (
+                  <View style={styles.blockActions}>
+                    <TouchableOpacity style={styles.blockActionBtn} onPress={() => onPlanTask?.(task)}>
+                      <Text allowFontScaling={false} style={[styles.blockAction, inverted && styles.workTextNow]} numberOfLines={1}>
+                        {state === 'missed' ? '⏱ Replan' : '⏱ Move'}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.blockDeleteBtn}
+                      onPress={() => onUnplanTask?.(task)}
+                      accessibilityLabel={`Take ${task.title} off the schedule`}
+                    >
+                      <Text allowFontScaling={false} style={[styles.blockDelete, inverted && styles.workTextNow]}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            );
+          }
+
+          const existingPath = notePaths[event.uid];
 
           return (
             <View
               key={event.uid}
-              style={[
-                styles.block,
-                {
-                  top,
-                  height: blockHeight,
-                  left: `${column * widthPercent}%`,
-                  width: `${widthPercent}%`,
-                },
-              ]}
+              style={[styles.block, position]}
             >
               <TouchableOpacity style={styles.blockBody} onPress={() => onEditEvent(event)}>
                 <Text allowFontScaling={false} style={styles.blockTitle} numberOfLines={1}>
@@ -224,4 +328,16 @@ const styles = StyleSheet.create({
   blockAction: { fontSize: 11, fontWeight: 'bold', color: '#000000' },
   blockDeleteBtn: { paddingLeft: 8 },
   blockDelete: { fontSize: 12, color: '#606060' },
+  // Dashed, so a planned task reads as yours to do rather than somewhere to
+  // be, while still taking up the hour the way an event does.
+  workBlock: { borderStyle: 'dashed', backgroundColor: '#f7f7f7' },
+  // In progress: inverted, the one block on the page that is black.
+  workBlockNow: { borderStyle: 'solid', backgroundColor: '#000000' },
+  workBlockMissed: { borderStyle: 'dotted', borderColor: '#404040' },
+  workBlockDone: { borderWidth: 1, borderColor: '#909090', backgroundColor: '#ffffff' },
+  workTitleRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  workCheck: { fontSize: 14, color: '#000000', marginRight: 5 },
+  workTextNow: { color: '#ffffff' },
+  workState: { fontWeight: 'bold' },
+  workTitleDone: { textDecorationLine: 'line-through', color: '#707070' },
 });

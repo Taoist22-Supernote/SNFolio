@@ -23,6 +23,20 @@ describe('task CalDAV conversion', () => {
     expect(task.notes).toBe('Double check package');
   });
 
+  test('a sync keeps the work time planned on the device', () => {
+    // The server has no field for it, so the incoming copy never carries one;
+    // rebuilding from it alone would take every planned task off the schedule.
+    const existing: CalendarTask = {
+      uid: 't3', title: 'Essay', completed: false, createdAt: new Date(),
+      dueDate: new Date(2026, 10, 20), workStart: new Date(2026, 10, 17, 14), workMinutes: 90,
+    };
+    const incoming = taskToCaldavItem({ ...existing, title: 'Essay (renamed)' });
+    const synced = taskFromCaldavItem(incoming, existing);
+    expect(synced.title).toBe('Essay (renamed)');
+    expect(synced.workStart).toEqual(new Date(2026, 10, 17, 14));
+    expect(synced.workMinutes).toBe(90);
+  });
+
   test('preserves an undated task without inventing a due date', () => {
     const item = taskToCaldavItem({
       uid: 't2', title: 'Someday', completed: false, createdAt: new Date(),

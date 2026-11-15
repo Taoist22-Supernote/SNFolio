@@ -497,3 +497,17 @@ Diagnostic hidden before release (maintainer decision 2026-09-23): the timings t
 - Maintainer confirms all three were device-tested: Remove Account — Keep Events, the restore banner's Allow Reconnection, and the PDF note message.
 - Release build 2026-09-23: version 0.1.28 / 73. build/generated and build/outputs removed first; 795 tests pass, typecheck passes, lint zero errors; fresh build and package validation pass; bundle contains the recovery controls, the PDF message and the backup list, and no timings toggle; native package still has writeAutoBackupFile.
 - Documentation after 0.1.28 (no version bump, docs only): README now covers the restore banner's Allow Reconnection (and that Connect & Test refuses until it is tapped) and the Dismiss button on the notice; docs/CALENDAR_CONNECTIONS.md step 6 describes the new connection message and that connecting reads events immediately; docs/TROUBLESHOOTING.md gains 'A note cannot be created while a PDF is open' and 'SNFolio is slow, or a sync brought in too much' (reinstalling does not clear the data; the three ways to clear it).
+
+## Work time on the schedule — local validation
+
+| ID | Test | Expected result |
+|---|---|---|
+| WRK-01 | In the Day Planner, tap **⏱** on an undated task | The planner opens on the viewed day at the first free quarter hour that fits an hour, past any timed events. |
+| WRK-02 | Choose 1h 30m and **Put on schedule** | A dashed block appears on the Schedule at that time; the task row starts with **⏱** and the time; the task's due date is unchanged. |
+| WRK-03 | Plan a task over an existing event | The block and the event split the hour side by side; neither hides the other. |
+| WRK-04 | Plan a block for now on today | The block is black with **▶ NOW**; within 15 minutes of its end passing, it changes to **MISSED** and **⏱ Replan**. |
+| WRK-05 | Tick the box on a block | The task completes and the block stays, struck through, with no Move/✕. |
+| WRK-06 | **⏱ Move** to another day, then **✕** on that day | It leaves the first day and appears on the second; ✕ takes it off the schedule and the status line says the due date is unchanged. |
+| WRK-07 | Edit the planned task's title in the task form | The block keeps its time. |
+| WRK-08 | Sync a planned CalDAV task, then restart SNFolio | The work time survives both; the server's copy has no new fields. |
+| WRK-09 | Back up and restore a workspace with planned tasks | The blocks return at the same times. |

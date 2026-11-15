@@ -206,6 +206,18 @@ export interface CalendarTask {
   /** True when the due value is a date without a specific clock time. */
   allDay?: boolean;
   /**
+   * When you plan to work on it, as opposed to when it is due. A deadline
+   * says what is owed; this says when it gets done, and is what puts the
+   * task on the Day Planner's schedule beside the events. Always paired with
+   * workMinutes; see domain/workBlocks.
+   *
+   * Device-only for now: CalDAV sync carries it across from the stored copy
+   * rather than writing it to the server.
+   */
+  workStart?: Date;
+  /** Length of the planned work block, in minutes. */
+  workMinutes?: number;
+  /**
    * Denormalised mirror of `status === 'done'`.
    *
    * Read in a couple of dozen places and written into the outbound VTODO, so

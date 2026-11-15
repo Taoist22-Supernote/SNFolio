@@ -410,6 +410,27 @@ describe('task storage', () => {
     expect(t.createdAt).toBeInstanceOf(Date);
   });
 
+  test('a planned work time survives a reload as a real date', async () => {
+    const first = new CalendarStorage();
+    first.upsertTask({
+      uid: 't-work',
+      title: 'Draft essay',
+      dueDate: new Date('2026-11-20T00:00:00.000Z'),
+      workStart: new Date('2026-11-17T14:00:00.000Z'),
+      workMinutes: 90,
+      completed: false,
+      createdAt: new Date('2026-11-15T00:00:00.000Z'),
+    });
+    await flushWrites();
+
+    const second = new CalendarStorage();
+    await second.load();
+    const [t] = second.getTasks();
+    expect(t.workStart).toBeInstanceOf(Date);
+    expect(t.workStart?.toISOString()).toBe('2026-11-17T14:00:00.000Z');
+    expect(t.workMinutes).toBe(90);
+  });
+
   test('upsert replaces by uid rather than duplicating', () => {
     const store = new CalendarStorage();
     const base = { uid: 't-1', title: 'A', completed: false, createdAt: new Date() };

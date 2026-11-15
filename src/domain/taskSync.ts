@@ -57,6 +57,9 @@ export function taskFromCaldavItem(
     title: item.summary.replace(/^\[TASK\]\s*/i, '').trim(),
     dueDate: item.undatedTask ? undefined : new Date(item.start),
     allDay: item.allDay,
+    // The server knows nothing of a planned work time; keep the device's.
+    workStart: existing?.workStart,
+    workMinutes: existing?.workMinutes,
     // A task cannot be its own parent; a server that says so is ignored
     // rather than producing a row that nests inside itself.
     parentId: item.parentUid && item.parentUid !== item.uid ? item.parentUid : undefined,
