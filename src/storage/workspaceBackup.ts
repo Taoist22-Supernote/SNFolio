@@ -109,6 +109,15 @@ export function validateWorkspaceData(data: any): asserts data is WorkspaceData 
       }
       if (field === 'tasks') {
         requireValid(typeof item.completed === 'boolean', 'task completion');
+        if (item.workMinutes !== undefined) {
+          requireValid(typeof item.workMinutes === 'number' && Number.isFinite(item.workMinutes), 'tasks.workMinutes');
+        }
+        if (item.workSessions !== undefined) {
+          requireValid(Array.isArray(item.workSessions) && item.workSessions.every((session: any) =>
+            object(session) && typeof session.id === 'string' && !!session.id && date(session.start)
+            && typeof session.minutes === 'number' && Number.isFinite(session.minutes)
+            && (session.done === undefined || typeof session.done === 'boolean')), 'tasks.workSessions');
+        }
         if (item.status !== undefined) requireValid(['todo', 'in-progress', 'done'].includes(item.status), 'task status');
       }
       if (field === 'projects') {

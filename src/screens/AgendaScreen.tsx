@@ -185,7 +185,7 @@ import {
 import { firstPickedFilePath, parentFolderFromPicker } from '../domain/fileSelection';
 import { cleanRelativeNoteSubpath, paraEventNoteFolder } from '../domain/eventNoteRouting';
 import { areaArchiveState, projectArchiveState } from '../domain/paraArchive';
-import { hasWorkTime, suggestWorkStart, withoutWorkTime, withWorkTime, workBlocksForDay, workOverlaps, workTimeLabel } from '../domain/workBlocks';
+import { defaultSessionMinutes, findSession, hasWorkTime, openSessions, sessionKey, suggestWorkStart, withoutSession, withSession, withSessionDone, workBlocksForDay, workOverlaps, workTimeLabel } from '../domain/workBlocks';
 import { WorkTimeModal } from './WorkTimeModal';
 
 type SettingsTab = 'sync' | 'notes' | 'app' | 'help';
@@ -691,9 +691,10 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     deleteItem: (event: CalendarEvent) => { void event; },
     typeLabel: (event: CalendarEvent): string => { void event; return ''; },
     toggleTask: (task: CalendarTask) => { void task; },
+    toggleSession: (task: CalendarTask, sessionId: string) => { void task; void sessionId; },
     editTask: (task: CalendarTask) => { void task; },
-    planTask: (task: CalendarTask) => { void task; },
-    unplanTask: (task: CalendarTask) => { void task; },
+    planTask: (task: CalendarTask, sessionId?: string) => { void task; void sessionId; },
+    unplanTask: (task: CalendarTask, sessionId: string) => { void task; void sessionId; },
     taskNote: (task: CalendarTask) => { void task; },
     taskMeta: (task: CalendarTask): string => { void task; return ''; },
   });
@@ -706,9 +707,10 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     onDeleteEvent: (event: CalendarEvent) => dayGridLatest.current.deleteItem(event),
     typeLabel: (event: CalendarEvent) => dayGridLatest.current.typeLabel(event),
     onToggleTask: (task: CalendarTask) => dayGridLatest.current.toggleTask(task),
+    onToggleSession: (task: CalendarTask, sessionId: string) => dayGridLatest.current.toggleSession(task, sessionId),
     onEditTask: (task: CalendarTask) => dayGridLatest.current.editTask(task),
-    onPlanTask: (task: CalendarTask) => dayGridLatest.current.planTask(task),
-    onUnplanTask: (task: CalendarTask) => dayGridLatest.current.unplanTask(task),
+    onPlanTask: (task: CalendarTask, sessionId: string) => dayGridLatest.current.planTask(task, sessionId),
+    onUnplanTask: (task: CalendarTask, sessionId: string) => dayGridLatest.current.unplanTask(task, sessionId),
     onTaskNoteAction: (task: CalendarTask) => dayGridLatest.current.taskNote(task),
     taskMeta: (task: CalendarTask) => dayGridLatest.current.taskMeta(task),
   }), []);
@@ -2773,13 +2775,14 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   // surface on today — see sectionTasksForDay for why.
   const daySections = sectionTasksForDay(tasks, selectedDate);
   // Tasks planned for the selected day, drawn on the schedule as blocks.
-  const dayWorkTasks = useMemo(() => workBlocksForDay(tasks, selectedDate), [tasks, selectedDate]);
-  const [planningTask, setPlanningTask] = useState<CalendarTask | null>(null);
+  const dayWorkBlocks = useMemo(() => workBlocksForDay(tasks, selectedDate), [tasks, selectedDate]);
+  /** The task being planned, and the session being moved (none when adding one). */
+  const [planning, setPlanning] = useState<{ task: CalendarTask; sessionId?: string } | null>(null);
   // The Now and Missed cues need a clock. A quarter-hour tick, since blocks
   // start on 15-minute steps, and only while today has blocks to judge: each
   // grid redraw costs a visible refresh on e-ink.
   const [clockNow, setClockNow] = useState(() => new Date());
-  const tickWorkClock = dayWorkTasks.length > 0 && isSameCalendarDay(selectedDate, new Date());
+  const tickWorkClock = dayWorkBlocks.length > 0 && isSameCalendarDay(selectedDate, new Date());
   useEffect(() => {
     setClockNow(new Date());
     if (!tickWorkClock) return undefined;
@@ -2992,34 +2995,60 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   };
 
   /**
-   * Puts a task on the schedule, or moves it there. Only the work time
-   * changes — the deadline, and so the CalDAV copy, are untouched, which is
-   * why nothing is pushed.
+   * Adds a work session to a task, or moves one. Only the sessions change —
+   * the deadline, and so the CalDAV copy, are untouched, which is why nothing
+   * is pushed.
    */
-  const handleSaveWorkTime = (task: CalendarTask, start: Date, minutes: number) => {
+  const handleSaveWorkTime = (task: CalendarTask, start: Date, minutes: number, sessionId?: string) => {
     const current = calendarStorage.getTasks().find(t => t.uid === task.uid) ?? task;
-    calendarStorage.upsertTask(withWorkTime(current, start, minutes));
+    calendarStorage.upsertTask(withSession(current, start, minutes, sessionId));
     setTasks([...calendarStorage.getTasks()]);
-    setPlanningTask(null);
+    setPlanning(null);
     const day = start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     setStatusMsg(`"${task.title}" is on the schedule: ${day}, ${formatTimeOfDay(minutesFromDate(start), timeFormat)}.`);
   };
 
-  const handleUnplanTask = (task: CalendarTask) => {
+  const handleUnplanTask = (task: CalendarTask, sessionId: string) => {
     const current = calendarStorage.getTasks().find(t => t.uid === task.uid) ?? task;
-    calendarStorage.upsertTask(withoutWorkTime(current));
+    const next = withoutSession(current, sessionId);
+    calendarStorage.upsertTask(next);
     setTasks([...calendarStorage.getTasks()]);
-    setPlanningTask(null);
-    setStatusMsg(`"${task.title}" taken off the schedule. Its due date is unchanged.`);
+    setPlanning(null);
+    setStatusMsg(hasWorkTime(next)
+      ? `One session of "${task.title}" taken off the schedule. Its other sessions and due date are unchanged.`
+      : `"${task.title}" taken off the schedule. Its due date is unchanged.`);
+  };
+
+  /**
+   * Ticks one sitting. The task stays open (CT, 2026-11-15); when that was
+   * its last open session, the status line says so, since the task row is
+   * where it gets finished.
+   */
+  const handleToggleSession = (task: CalendarTask, sessionId: string) => {
+    const current = calendarStorage.getTasks().find(t => t.uid === task.uid) ?? task;
+    const session = findSession(current, sessionId);
+    if (!session) {
+      return;
+    }
+    const next = withSessionDone(current, sessionId, !session.done);
+    calendarStorage.upsertTask(next);
+    setTasks([...calendarStorage.getTasks()]);
+    if (session.done) {
+      setStatusMsg(`Session of "${task.title}" reopened.`);
+    } else if (openSessions(next).length === 0) {
+      setStatusMsg(`Every planned session of "${task.title}" is done. Tick the task in its row when it is finished, or Plan another session.`);
+    } else {
+      setStatusMsg(`Session of "${task.title}" done. The task stays open.`);
+    }
   };
 
   /** First free slot on a day, for the planner to open on. */
   const eventsOnDay = (day: Date): CalendarEvent[] =>
     isSameCalendarDay(day, selectedDate) ? events : expandEventsForDate(visibleEvents, day);
-  const suggestWorkSlot = (day: Date, minutes: number, ignoreUid?: string): Date =>
-    suggestWorkStart(day, eventsOnDay(day), calendarStorage.getTasks(), minutes, new Date(), scheduleStartHour, scheduleEndHour, ignoreUid);
-  const workSlotOverlaps = (start: Date, minutes: number, ignoreUid?: string) =>
-    workOverlaps(start, minutes, eventsOnDay(start), calendarStorage.getTasks(), ignoreUid);
+  const suggestWorkSlot = (day: Date, minutes: number, ignoreSession?: string): Date =>
+    suggestWorkStart(day, eventsOnDay(day), calendarStorage.getTasks(), minutes, new Date(), scheduleStartHour, scheduleEndHour, ignoreSession);
+  const workSlotOverlaps = (start: Date, minutes: number, ignoreSession?: string) =>
+    workOverlaps(start, minutes, eventsOnDay(start), calendarStorage.getTasks(), ignoreSession);
 
   /** Same rule as events: a task with a linked note asks first, and the note is always kept. */
   const requestDeleteTask = (task: CalendarTask) => {
@@ -4581,8 +4610,7 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
       completed: existing?.completed ?? false,
       completedAt: existing?.completedAt,
       // Planned on the schedule, not in this form; editing must not unplan it.
-      workStart: existing?.workStart,
-      workMinutes: existing?.workMinutes,
+      workSessions: existing?.workSessions,
       parentId: existing?.parentId,
       // The task is rebuilt from scratch here, so anything the form does not
       // carry has to be read back off the stored one. Its arranged position
@@ -4862,8 +4890,9 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
 
   dayGridLatest.current = {
     toggleTask: task => { void handleToggleTask(task); },
+    toggleSession: handleToggleSession,
     editTask: handleEditTask,
-    planTask: setPlanningTask,
+    planTask: (task, sessionId) => setPlanning({ task, sessionId }),
     unplanTask: handleUnplanTask,
     // Opens the linked note or PDF, or offers to create one: the same path
     // as the Tasks view's note button.
@@ -6968,25 +6997,32 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
             }}
           />
 
-          {planningTask && (
-            <WorkTimeModal
-              key={planningTask.uid}
-              task={planningTask}
-              // On the day being viewed, unless that day is already over.
-              suggestedStart={suggestWorkSlot(
-                selectedDate.getTime() < new Date(new Date().setHours(0, 0, 0, 0)).getTime()
-                  ? new Date() : selectedDate,
-                planningTask.workMinutes ?? 60,
-                planningTask.uid,
-              )}
-              suggestFor={(day, minutes) => suggestWorkSlot(day, minutes, planningTask.uid)}
-              overlapsFor={(start, minutes) => workSlotOverlaps(start, minutes, planningTask.uid)}
-              weekStartsOn={weekStartsOn}
-              onSave={handleSaveWorkTime}
-              onClear={handleUnplanTask}
-              onClose={() => setPlanningTask(null)}
-            />
-          )}
+          {planning && (() => {
+            const session = findSession(planning.task, planning.sessionId);
+            // Moving a session ignores only itself; a new one steps past all
+            // of the task's others.
+            const ignore = session ? sessionKey(planning.task.uid, session.id) : undefined;
+            return (
+              <WorkTimeModal
+                key={`${planning.task.uid}:${planning.sessionId ?? 'new'}`}
+                task={planning.task}
+                session={session}
+                // On the day being viewed, unless that day is already over.
+                suggestedStart={suggestWorkSlot(
+                  selectedDate.getTime() < new Date(new Date().setHours(0, 0, 0, 0)).getTime()
+                    ? new Date() : selectedDate,
+                  defaultSessionMinutes(planning.task, session),
+                  ignore,
+                )}
+                suggestFor={(day, minutes) => suggestWorkSlot(day, minutes, ignore)}
+                overlapsFor={(start, minutes) => workSlotOverlaps(start, minutes, ignore)}
+                weekStartsOn={weekStartsOn}
+                onSave={handleSaveWorkTime}
+                onClear={handleUnplanTask}
+                onClose={() => setPlanning(null)}
+              />
+            );
+          })()}
 
           <ItemCreationModal
             visible={showItemCreationModal}
@@ -7525,9 +7561,10 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                     onNoteAction={dayGridHandlers.onNoteAction}
                     onDeleteEvent={dayGridHandlers.onDeleteEvent}
                     typeLabel={dayGridHandlers.typeLabel}
-                    workTasks={dayWorkTasks}
+                    workBlocks={dayWorkBlocks}
                     now={clockNow}
                     onToggleTask={dayGridHandlers.onToggleTask}
+                    onToggleSession={dayGridHandlers.onToggleSession}
                     onEditTask={dayGridHandlers.onEditTask}
                     onPlanTask={dayGridHandlers.onPlanTask}
                     onUnplanTask={dayGridHandlers.onUnplanTask}
@@ -7648,7 +7685,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                                     style={[styles.focusTaskText, task.completed && styles.focusTaskDone]}
                                     numberOfLines={1}
                                   >
-                                    {hasWorkTime(task) ? (
+                                    {/* The next open session; nothing once every one is ticked. */}
+                                    {workTimeLabel(task, selectedDate, timeFormat) ? (
                                       <Text style={styles.focusWorkTime}>{`${workTimeLabel(task, selectedDate, timeFormat)}  `}</Text>
                                     ) : null}
                                     <LinkedFileMarker item={task} />{taskRowLabel(task, showDate, contextTag)}
@@ -7656,16 +7694,22 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                                 </TouchableOpacity>
 
                                 {/* Give it a time to be worked on: it then
-                                    sits on the schedule, not only in this list. */}
-                                {!isDone(task) && !hasWorkTime(task) && (
+                                    sits on the schedule, not only in this list.
+                                    Stays once planned, as "+ Plan", to add
+                                    another session (CT, 2026-11-15). */}
+                                {!isDone(task) && (
                                   <TouchableOpacity
                                     style={styles.focusPlanButton}
-                                    onPress={() => setPlanningTask(task)}
-                                    accessibilityLabel={`Plan a time to work on ${task.title}`}
+                                    onPress={() => setPlanning({ task })}
+                                    accessibilityLabel={openSessions(task).length > 0
+                                      ? `Plan another session of ${task.title}`
+                                      : `Plan a time to work on ${task.title}`}
                                   >
                                     {/* A word in a box, not the ⏱ emoji: e-ink draws emoji as a
                                         faint grey glyph that was easy to miss (CT, 2026-11-16). */}
-                                    <Text allowFontScaling={false} style={styles.focusPlanText}>Plan</Text>
+                                    <Text allowFontScaling={false} style={styles.focusPlanText}>
+                                      {openSessions(task).length > 0 ? '+ Plan' : 'Plan'}
+                                    </Text>
                                   </TouchableOpacity>
                                 )}
 

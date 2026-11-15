@@ -5,6 +5,7 @@ import { NativeModules } from 'react-native';
 import { CalendarEvent, CalendarFeed, CalendarSettings, CalendarTask, MeetingNoteMapping, NoteKind, Area, EventType, Project, Resource, ItemMembership, PendingTaskDelete } from '../domain/types';
 import { isLegacyTaskEvent, taskFromLegacyEvent } from '../domain/taskFilters';
 import { normaliseTask } from '../domain/taskModel';
+import { reviveWorkSessions } from '../domain/workBlocks';
 import { DEFAULT_SYSTEM_TEMPLATE } from '../domain/noteTemplates';
 import { CaldavPushState, emptyPushState, forgetPush, stateForTarget } from '../domain/pushState';
 import { inferTaskCollectionUrl, normaliseCollectionUrl, taskSourceCollection } from '../domain/taskSync';
@@ -203,14 +204,23 @@ function reviveResource(raw: any): Resource {
 }
 
 function reviveTask(raw: any): CalendarTask {
-  return {
-    ...raw,
+  // 0.1.33 stored one work time as workStart/workMinutes; that pair becomes
+  // the first session, and the old fields are not carried forward.
+  const rest = { ...raw };
+  delete rest.workStart;
+  delete rest.workMinutes;
+  const task: CalendarTask = {
+    ...rest,
     dueDate: raw.dueDate ? new Date(raw.dueDate) : undefined,
-    workStart: raw.workStart ? new Date(raw.workStart) : undefined,
+    workSessions: reviveWorkSessions(raw),
     completedAt: raw.completedAt ? new Date(raw.completedAt) : undefined,
     createdAt: raw.createdAt ? new Date(raw.createdAt) : new Date(),
     caldavCollectionUrl: raw.caldavCollectionUrl || inferTaskCollectionUrl(raw.caldavUrl),
   };
+  if (!task.workSessions) {
+    delete task.workSessions;
+  }
+  return task;
 }
 
 /** See CalendarStorage.snapshotRecords. */

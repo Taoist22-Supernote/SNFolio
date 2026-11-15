@@ -2,7 +2,7 @@ import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { Text, TouchableOpacity } from 'react-native';
 import { overlapMessage, WorkTimeModal } from './WorkTimeModal';
-import { BusySpan, withWorkTime } from '../domain/workBlocks';
+import { BusySpan, findSession, withSession } from '../domain/workBlocks';
 import { CalendarTask } from '../domain/types';
 
 const at = (hour: number, minute = 0) => new Date(2026, 10, 17, hour, minute);
@@ -39,7 +39,7 @@ test('an unplanned task opens on the suggested slot and says the deadline stays'
   expect(text).not.toContain('Take off schedule');
   press(tree, '1h 30m');
   press(tree, 'Put on schedule');
-  expect(onSave).toHaveBeenCalledWith(essay, at(10, 30), 90);
+  expect(onSave).toHaveBeenCalledWith(essay, at(10, 30), 90, undefined);
 });
 
 test('changing the length follows the free slot until a time is chosen by hand', () => {
@@ -48,19 +48,39 @@ test('changing the length follows the free slot until a time is chosen by hand',
   const tree = render(essay, { onSave, suggestFor });
   press(tree, '2h');
   press(tree, 'Put on schedule');
-  expect(onSave).toHaveBeenCalledWith(essay, at(13), 120);
+  expect(onSave).toHaveBeenCalledWith(essay, at(13), 120, undefined);
 });
 
-test('a planned task opens on its own time and can come off the schedule', () => {
-  const planned = withWorkTime(essay, at(14), 45);
+test('moving a session opens on its own time and can take it off the schedule', () => {
+  const planned = withSession(essay, at(14), 45);
   const onClear = jest.fn();
   const onSave = jest.fn();
-  const tree = render(planned, { onClear, onSave });
-  expect(textOf(tree)).toContain('2:00 PM');
+  const tree = render(planned, { session: findSession(planned, 's1'), onClear, onSave });
+  const text = textOf(tree);
+  expect(text).toContain('2:00 PM');
+  expect(text).toContain('Move session');
   press(tree, 'Save');
-  expect(onSave).toHaveBeenCalledWith(planned, at(14), 45);
+  expect(onSave).toHaveBeenCalledWith(planned, at(14), 45, 's1');
   press(tree, 'Take off schedule');
-  expect(onClear).toHaveBeenCalledWith(planned);
+  expect(onClear).toHaveBeenCalledWith(planned, 's1');
+});
+
+test('adding another session names the ones already planned and starts at their length', () => {
+  const planned = withSession(withSession(essay, at(14), 90), new Date(2026, 10, 19, 9), 90);
+  const onSave = jest.fn();
+  const tree = render(planned, { onSave });
+  const text = textOf(tree);
+  expect(text).toContain('Plan work time');
+  expect(text).toContain('Adding another session. 2 others are planned: Tue 2:00 PM, Thu 9:00 AM');
+  expect(text).not.toContain('Take off schedule');
+  press(tree, 'Put on schedule');
+  expect(onSave).toHaveBeenCalledWith(planned, at(10, 30), 90, undefined);
+});
+
+test('moving one of several sessions mentions only the others', () => {
+  const planned = withSession(withSession(essay, at(14), 60), new Date(2026, 10, 19, 9), 60);
+  const text = textOf(render(planned, { session: findSession(planned, 's2') }));
+  expect(text).toContain('Moving one session. 1 other is planned: Tue 2:00 PM');
 });
 
 describe('overlap warning', () => {
@@ -86,7 +106,7 @@ describe('overlap warning', () => {
     press(tree, '2h');
     expect(textOf(tree)).toContain('Overlaps Team meeting');
     press(tree, 'Put on schedule');
-    expect(onSave).toHaveBeenCalledWith(essay, at(9), 120);
+    expect(onSave).toHaveBeenCalledWith(essay, at(9), 120, undefined);
   });
 
   test('another planned task is called planned, and a long list is cut short', () => {

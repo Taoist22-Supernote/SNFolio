@@ -198,6 +198,16 @@ export type TaskStatus = 'todo' | 'in-progress' | 'done';
  */
 export type TaskPriority = 1 | 2 | 3 | 4;
 
+/** One planned sitting on a task: when, how long, and whether it happened. */
+export interface WorkSession {
+  /** Unique within its task; never contains ':' (it is part of a grid uid). */
+  id: string;
+  start: Date;
+  minutes: number;
+  /** This sitting is finished. The task itself is finished from its row. */
+  done?: boolean;
+}
+
 export interface CalendarTask {
   uid: string;
   title: string;
@@ -207,16 +217,17 @@ export interface CalendarTask {
   allDay?: boolean;
   /**
    * When you plan to work on it, as opposed to when it is due. A deadline
-   * says what is owed; this says when it gets done, and is what puts the
-   * task on the Day Planner's schedule beside the events. Always paired with
-   * workMinutes; see domain/workBlocks.
+   * says what is owed; sessions say when it gets done, and are what put the
+   * task on the Day Planner's schedule beside the events. A task can have
+   * several (an essay over three sittings), each its own block, ticked off on
+   * its own while the task stays open (CT, 2026-11-15). See domain/workBlocks.
    *
-   * Device-only for now: CalDAV sync carries it across from the stored copy
-   * rather than writing it to the server.
+   * Device-only for now: CalDAV sync carries them across from the stored copy
+   * rather than writing them to the server. Stored tasks from 0.1.33 had one
+   * workStart/workMinutes pair instead; reviveTask turns that into the first
+   * session on load.
    */
-  workStart?: Date;
-  /** Length of the planned work block, in minutes. */
-  workMinutes?: number;
+  workSessions?: WorkSession[];
   /**
    * Denormalised mirror of `status === 'done'`.
    *

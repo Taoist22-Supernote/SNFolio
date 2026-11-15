@@ -515,3 +515,9 @@ Diagnostic hidden before release (maintainer decision 2026-09-23): the timings t
 | WRK-11 | Tick a block, then tap its note button | The finished block still opens its note; Move and ✕ are gone. |
 | WRK-12 | Expand a task's subtasks in the Day Planner and tap **Plan** on one | The subtask gets its own block; ticking that block completes only the subtask. |
 | WRK-13 | In **Plan**, set a start or length that runs into an event, then into another planned task | A boxed bold line names each (another task says "planned"), e.g. "Overlaps Team meeting (10:00 AM–11:00 AM). You can still save."; it disappears when the time is moved clear; **Put on schedule** still saves. The first free slot never shows it. |
+| WRK-14 | Install over 0.1.33 with a task already planned | The task's block is still there at the same time and length: the old work time loads as its first session. |
+| WRK-15 | On a planned task's row, tap **+ Plan** and put a second session on another day | The planner says "Adding another session. 1 other is planned: …" and opens at the first session's length; both days show a block; the row reads e.g. **⏱ 2:00 PM +1**. |
+| WRK-16 | Tick one session's block | Only that block is struck through and loses Move/✕; the task stays open in its row; the status line says the task stays open. Ticking the last open session says every session is done and the task is finished from its row. |
+| WRK-17 | **⏱ Move** one of two sessions, then **✕** it | The planner says "Move session" and names only the other session; ✕ removes that block only, and the other session and the due date are unchanged. |
+| WRK-18 | Tick the task itself in its row | All its blocks read done; tapping the tick on one of them reopens the task. |
+| WRK-19 | Sync a task with two sessions, restart, then back up and restore | Both sessions, and which one is ticked, survive all three; the server copy has no new fields. |

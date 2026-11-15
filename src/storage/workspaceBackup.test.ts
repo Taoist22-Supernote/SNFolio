@@ -195,3 +195,30 @@ test('an empty workspace is valid, holds nothing, and keeps the settings it is g
   const backup = { format: 'snfolio-workspace', version: 1, createdAt: new Date().toISOString(), data, imports: {} };
   expect(() => parseWorkspaceBackup(JSON.stringify(backup))).not.toThrow();
 });
+
+test('work sessions survive backup and restore, and an 0.1.33 backup restores as one session', async () => {
+  const { store } = await fixture();
+  const sessions = [
+    { id: 's1', start: new Date(2026, 10, 17, 14), minutes: 90, done: true },
+    { id: 's2', start: new Date(2026, 10, 19, 9), minutes: 60 },
+  ];
+  store.upsertTask({ uid: 'essay', title: 'Essay', createdAt: new Date(), completed: false, workSessions: sessions });
+  const data = await store.exportWorkspace();
+  await store.restoreWorkspace(data);
+  expect(store.getTasks().find(t => t.uid === 'essay')?.workSessions).toEqual(sessions);
+
+  const reloaded = new CalendarStorage();
+  await reloaded.load();
+  expect(reloaded.getTasks().find(t => t.uid === 'essay')?.workSessions).toEqual(sessions);
+
+  // A backup made by 0.1.33 carries the old single work time.
+  const old: WorkspaceBackup = { format: 'snfolio-workspace', version: 1, createdAt: new Date().toISOString(), data: JSON.parse(JSON.stringify(data)), imports: {} };
+  old.data.tasks = [{ uid: 'old', title: 'Old', completed: false, createdAt: new Date().toISOString(), workStart: '2026-11-17T14:00:00.000Z', workMinutes: 45 }];
+  await store.restoreWorkspace(parseWorkspaceBackup(JSON.stringify(old)).data);
+  expect(store.getTasks().find(t => t.uid === 'old')?.workSessions).toEqual([{ id: 's1', start: new Date('2026-11-17T14:00:00.000Z'), minutes: 45 }]);
+
+  old.data.tasks = [{ uid: 'bad', title: 'Bad', completed: false, workSessions: [{ id: 's1', start: 'not a date', minutes: 60 }] }];
+  expect(() => parseWorkspaceBackup(JSON.stringify(old))).toThrow('tasks.workSessions');
+  old.data.tasks = [{ uid: 'bad', title: 'Bad', completed: false, workSessions: [{ id: 's1', start: '2026-11-17T14:00:00.000Z', minutes: 60, done: 'yes' }] }];
+  expect(() => parseWorkspaceBackup(JSON.stringify(old))).toThrow('tasks.workSessions');
+});

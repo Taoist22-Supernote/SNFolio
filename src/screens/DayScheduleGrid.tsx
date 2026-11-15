@@ -4,10 +4,12 @@ import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { CalendarEvent, CalendarTask } from '../domain/types';
 import { DEFAULT_DAY_GRID, gridHeight, gridHours, hourLabel, placeEvents } from '../domain/dayGrid';
-import { statusGlyph, taskStatus } from '../domain/taskModel';
+import { isDone, statusGlyph } from '../domain/taskModel';
 import {
   isWorkBlockUid,
-  taskUidOfWorkBlock,
+  sessionKey,
+  sessionKeyOfWorkBlock,
+  WorkBlock,
   workBlockEvent,
   WorkBlockState,
   workBlockState,
@@ -26,16 +28,19 @@ interface DayScheduleGridProps {
   typeLabel: (event: CalendarEvent) => string;
   /** Height of one hour; defaults to 58. The Manta Day Planner fits it to the screen. */
   hourHeight?: number;
-  /** Tasks with a work time on this day, drawn as blocks among the events. */
-  workTasks?: CalendarTask[];
+  /** Work sessions on this day, drawn as blocks among the events. */
+  workBlocks?: WorkBlock[];
   /** The clock the blocks are judged against: Now, Missed. */
   now?: Date;
+  /** Tick or untick one session. The task stays open either way. */
+  onToggleSession?: (task: CalendarTask, sessionId: string) => void;
+  /** Reopen a finished task from one of its blocks. */
   onToggleTask?: (task: CalendarTask) => void;
   onEditTask?: (task: CalendarTask) => void;
-  /** Move the block: opens the planner on it. */
-  onPlanTask?: (task: CalendarTask) => void;
-  /** Take the task off the schedule; its deadline is untouched. */
-  onUnplanTask?: (task: CalendarTask) => void;
+  /** Move the block: opens the planner on that session. */
+  onPlanTask?: (task: CalendarTask, sessionId: string) => void;
+  /** Take the session off the schedule; its deadline is untouched. */
+  onUnplanTask?: (task: CalendarTask, sessionId: string) => void;
   /**
    * Open the task's linked note or PDF, or start one when it has none. The
    * caller decides which from its own record; the block only labels it.
@@ -72,8 +77,9 @@ function DayScheduleGridInner({
   onDeleteEvent,
   typeLabel,
   hourHeight,
-  workTasks = [],
+  workBlocks = [],
   now,
+  onToggleSession,
   onToggleTask,
   onEditTask,
   onPlanTask,
@@ -91,8 +97,8 @@ function DayScheduleGridInner({
   const allDay = events.filter(e => e.allDay);
   // Work blocks go through the same placement as events, so a task planned
   // over a meeting splits the hour with it instead of hiding beneath it.
-  const workByUid = new Map(workTasks.map(task => [task.uid, task]));
-  const placed = placeEvents([...events, ...workTasks.map(workBlockEvent)], options);
+  const blockByKey = new Map(workBlocks.map(block => [sessionKey(block.task.uid, block.session.id), block]));
+  const placed = placeEvents([...events, ...workBlocks.map(workBlockEvent)], options);
   const clock = now ?? new Date();
   const hours = gridHours(options);
   const height = gridHeight(options);
@@ -140,9 +146,11 @@ function DayScheduleGridInner({
           };
 
           if (isWorkBlockUid(event.uid)) {
-            const task = workByUid.get(taskUidOfWorkBlock(event.uid));
-            if (!task) return null;
-            const state = workBlockState(task, clock);
+            const block = blockByKey.get(sessionKeyOfWorkBlock(event.uid));
+            if (!block) return null;
+            const { task, session } = block;
+            const state = workBlockState(block, clock);
+            const taskDone = isDone(task);
             const inverted = state === 'now';
             // The state rides in the title line, which every block has room
             // for; a one-hour block is too short for the meta line, and the
@@ -162,12 +170,18 @@ function DayScheduleGridInner({
                 ]}
               >
                 <View style={styles.workTitleRow}>
+                  {/* Ticks this sitting, not the task (CT, 2026-11-15): an essay
+                      over three sessions stays open after the first. A block
+                      of a finished task reopens the task instead, since its
+                      sessions all read done while the task is. */}
                   <TouchableOpacity
-                    onPress={() => onToggleTask?.(task)}
-                    accessibilityLabel={`${state === 'done' ? 'Reopen' : 'Complete'} ${task.title}`}
+                    onPress={() => (taskDone ? onToggleTask?.(task) : onToggleSession?.(task, session.id))}
+                    accessibilityLabel={taskDone
+                      ? `Reopen ${task.title}`
+                      : `${session.done ? 'Reopen' : 'Finish'} this session of ${task.title}`}
                   >
                     <Text allowFontScaling={false} style={[styles.workCheck, inverted && styles.workTextNow]}>
-                      {statusGlyph(taskStatus(task))}
+                      {statusGlyph(state === 'done' ? 'done' : 'todo')}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.blockBody} onPress={() => onEditTask?.(task)}>
@@ -199,14 +213,14 @@ function DayScheduleGridInner({
                       </TouchableOpacity>
                     )}
                     {state !== 'done' && (<>
-                    <TouchableOpacity style={styles.blockActionBtn} onPress={() => onPlanTask?.(task)}>
+                    <TouchableOpacity style={styles.blockActionBtn} onPress={() => onPlanTask?.(task, session.id)}>
                       <Text allowFontScaling={false} style={[styles.blockAction, inverted && styles.workTextNow]} numberOfLines={1}>
                         {state === 'missed' ? '⏱ Replan' : '⏱ Move'}
                       </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.blockDeleteBtn}
-                      onPress={() => onUnplanTask?.(task)}
+                      onPress={() => onUnplanTask?.(task, session.id)}
                       accessibilityLabel={`Take ${task.title} off the schedule`}
                     >
                       <Text allowFontScaling={false} style={[styles.blockDelete, inverted && styles.workTextNow]}>✕</Text>

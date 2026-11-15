@@ -3,7 +3,7 @@ import TestRenderer, { act } from 'react-test-renderer';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { DayScheduleGrid } from './DayScheduleGrid';
 import { LinkedFilePathsContext } from './LinkedFileMarker';
-import { withWorkTime } from '../domain/workBlocks';
+import { withSession, withSessionDone, workBlocksForDay } from '../domain/workBlocks';
 import { CalendarEvent, CalendarTask } from '../domain/types';
 
 const at = (hour: number, minute = 0) => new Date(2026, 10, 17, hour, minute);
@@ -19,7 +19,7 @@ const pressLabel = (tree: TestRenderer.ReactTestRenderer, label: string) => {
   act(() => target.props.onPress());
 };
 
-const essay: CalendarTask = withWorkTime(
+const essay: CalendarTask = withSession(
   { uid: 'essay', title: 'Draft essay', completed: false, status: 'todo', createdAt: at(7), dueDate: new Date(2026, 10, 20) },
   at(14),
   60,
@@ -44,7 +44,7 @@ function render(
         onNoteAction={jest.fn()}
         onDeleteEvent={jest.fn()}
         typeLabel={() => ''}
-        workTasks={[essay]}
+        workBlocks={workBlocksForDay([essay], at(0))}
         now={now}
         taskMeta={() => 'due Fri'}
         {...handlers}
@@ -83,19 +83,53 @@ describe('work blocks on the schedule', () => {
     expect(textOf(render(at(14, 20)))).toContain('▶ NOW · ');
   });
 
-  test('the block ticks off, moves and comes off the schedule', () => {
+  test('the block ticks off its session, moves and comes off the schedule', () => {
+    const onToggleSession = jest.fn();
     const onToggleTask = jest.fn();
     const onPlanTask = jest.fn();
     const onUnplanTask = jest.fn();
-    const tree = render(at(9), { onToggleTask, onPlanTask, onUnplanTask });
+    const tree = render(at(9), { onToggleSession, onToggleTask, onPlanTask, onUnplanTask });
     pressLabel(tree, '☐');
     pressLabel(tree, '⏱ Move');
     const unplan = tree.root.findAll(node =>
       node.type === TouchableOpacity && node.props.accessibilityLabel === 'Take Draft essay off the schedule');
     act(() => unplan[0].props.onPress());
-    expect(onToggleTask).toHaveBeenCalledWith(essay);
-    expect(onPlanTask).toHaveBeenCalledWith(essay);
-    expect(onUnplanTask).toHaveBeenCalledWith(essay);
+    expect(onToggleSession).toHaveBeenCalledWith(essay, 's1');
+    expect(onToggleTask).not.toHaveBeenCalled();
+    expect(onPlanTask).toHaveBeenCalledWith(essay, 's1');
+    expect(onUnplanTask).toHaveBeenCalledWith(essay, 's1');
+  });
+
+  test('two sessions of one task are two blocks, each acting on its own session', () => {
+    const twice = withSession(essay, at(9), 60);
+    const onPlanTask = jest.fn();
+    const tree = render(at(8), { workBlocks: workBlocksForDay([twice], at(0)), onPlanTask, hourHeight: 80 });
+    expect(textOf(tree).split('Draft essay').length - 1).toBe(2);
+    const moves = tree.root.findAllByType(TouchableOpacity)
+      .filter(node => node.findAllByType(Text).some(t => [t.props.children].flat(Infinity).join('') === '⏱ Move')
+        && node.findAllByType(TouchableOpacity).length === 1);
+    moves.forEach(button => act(() => button.props.onPress()));
+    expect(onPlanTask.mock.calls.map(([, id]) => id).sort()).toEqual(['s1', 's2']);
+  });
+
+  test('a ticked session is done while the task stays open, and unticks the session', () => {
+    const ticked = withSessionDone(essay, 's1', true);
+    const onToggleSession = jest.fn();
+    const tree = render(at(9), { workBlocks: workBlocksForDay([ticked], at(0)), onToggleSession });
+    expect(textOf(tree)).toContain('☑');
+    expect(textOf(tree)).not.toContain('⏱ Move');
+    pressLabel(tree, '☑');
+    expect(onToggleSession).toHaveBeenCalledWith(ticked, 's1');
+  });
+
+  test('a block of a finished task reopens the task', () => {
+    const finished = { ...essay, completed: true, status: 'done' as const };
+    const onToggleTask = jest.fn();
+    const onToggleSession = jest.fn();
+    const tree = render(at(9), { workBlocks: workBlocksForDay([finished], at(0)), onToggleTask, onToggleSession });
+    pressLabel(tree, '☑');
+    expect(onToggleTask).toHaveBeenCalledWith(finished);
+    expect(onToggleSession).not.toHaveBeenCalled();
   });
 
   test('a block with no note offers to create one', () => {
@@ -124,7 +158,7 @@ describe('work blocks on the schedule', () => {
 
   test('a ticked block keeps its note but not Move or ✕', () => {
     const done = { ...essay, completed: true, status: 'done' as const };
-    const text = textOf(render(at(16), { onTaskNoteAction: jest.fn(), workTasks: [done] }, { essay: '/x/Essay.note' }));
+    const text = textOf(render(at(16), { onTaskNoteAction: jest.fn(), workBlocks: workBlocksForDay([done], at(0)) }, { essay: '/x/Essay.note' }));
     expect(text).toContain('📂 Open Note');
     expect(text).not.toContain('⏱ Move');
     expect(text).not.toContain('⏱ Replan');

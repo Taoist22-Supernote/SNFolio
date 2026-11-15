@@ -410,14 +410,16 @@ describe('task storage', () => {
     expect(t.createdAt).toBeInstanceOf(Date);
   });
 
-  test('a planned work time survives a reload as a real date', async () => {
+  test('planned work sessions survive a reload as real dates', async () => {
     const first = new CalendarStorage();
     first.upsertTask({
       uid: 't-work',
       title: 'Draft essay',
       dueDate: new Date('2026-11-20T00:00:00.000Z'),
-      workStart: new Date('2026-11-17T14:00:00.000Z'),
-      workMinutes: 90,
+      workSessions: [
+        { id: 's1', start: new Date('2026-11-17T14:00:00.000Z'), minutes: 90, done: true },
+        { id: 's2', start: new Date('2026-11-19T09:00:00.000Z'), minutes: 60 },
+      ],
       completed: false,
       createdAt: new Date('2026-11-15T00:00:00.000Z'),
     });
@@ -426,9 +428,28 @@ describe('task storage', () => {
     const second = new CalendarStorage();
     await second.load();
     const [t] = second.getTasks();
-    expect(t.workStart).toBeInstanceOf(Date);
-    expect(t.workStart?.toISOString()).toBe('2026-11-17T14:00:00.000Z');
-    expect(t.workMinutes).toBe(90);
+    expect(t.workSessions?.[0].start).toBeInstanceOf(Date);
+    expect(t.workSessions).toEqual([
+      { id: 's1', start: new Date('2026-11-17T14:00:00.000Z'), minutes: 90, done: true },
+      { id: 's2', start: new Date('2026-11-19T09:00:00.000Z'), minutes: 60 },
+    ]);
+  });
+
+  test('a work time stored by 0.1.33 loads as the first session', async () => {
+    await AsyncStorage.setItem('@sn-calendar/tasks', JSON.stringify([{
+      uid: 't-old',
+      title: 'Draft essay',
+      workStart: '2026-11-17T14:00:00.000Z',
+      workMinutes: 90,
+      completed: false,
+      createdAt: '2026-11-15T00:00:00.000Z',
+    }]));
+    const store = new CalendarStorage();
+    await store.load();
+    const [t] = store.getTasks();
+    expect(t.workSessions).toEqual([{ id: 's1', start: new Date('2026-11-17T14:00:00.000Z'), minutes: 90 }]);
+    expect('workStart' in t).toBe(false);
+    expect('workMinutes' in t).toBe(false);
   });
 
   test('upsert replaces by uid rather than duplicating', () => {

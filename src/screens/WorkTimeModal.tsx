@@ -4,8 +4,8 @@ import { DatePickerModal } from './DatePickerModal';
 import { TimePickerModal } from './TimePickerModal';
 import { useTimeFormat } from './TimeFormatContext';
 import { formatDateTime, formatDuration, formatTimeOfDay, minutesFromDate, TimeFormat, withTimeOfDay } from '../domain/timeOfDay';
-import { BusySpan, hasWorkTime, WORK_DURATIONS, workMinutesOf } from '../domain/workBlocks';
-import { CalendarTask } from '../domain/types';
+import { BusySpan, defaultSessionMinutes, openSessions, WORK_DURATIONS } from '../domain/workBlocks';
+import { CalendarTask, WorkSession } from '../domain/types';
 
 interface WorkTimeModalProps {
   /**
@@ -14,7 +14,12 @@ interface WorkTimeModalProps {
    */
   task: CalendarTask;
   /**
-   * Where the planner opens when the task has no work time yet: the first
+   * The session being moved. Absent when adding one, which is what Plan on a
+   * task row always does, so a task can be given another sitting.
+   */
+  session?: WorkSession;
+  /**
+   * Where the planner opens when adding a session: the first
    * free slot on the day being viewed, worked out by the caller, which knows
    * the day's events.
    */
@@ -27,8 +32,9 @@ interface WorkTimeModalProps {
    */
   overlapsFor?: (start: Date, minutes: number) => BusySpan[];
   weekStartsOn?: number;
-  onSave: (task: CalendarTask, start: Date, minutes: number) => void;
-  onClear: (task: CalendarTask) => void;
+  /** `sessionId` is the session moved, or undefined for a new one. */
+  onSave: (task: CalendarTask, start: Date, minutes: number, sessionId?: string) => void;
+  onClear: (task: CalendarTask, sessionId: string) => void;
   onClose: () => void;
 }
 
@@ -41,6 +47,7 @@ interface WorkTimeModalProps {
  */
 export function WorkTimeModal({
   task,
+  session,
   suggestedStart,
   suggestFor,
   overlapsFor,
@@ -50,10 +57,11 @@ export function WorkTimeModal({
   onClose,
 }: WorkTimeModalProps): React.JSX.Element {
   const timeFormat = useTimeFormat();
-  const planned = hasWorkTime(task);
+  const planned = !!session;
   const [start, setStart] = React.useState<Date>(() =>
-    planned ? new Date(task.workStart as Date) : suggestedStart);
-  const [minutes, setMinutes] = React.useState<number>(() => workMinutesOf(task));
+    session ? new Date(session.start) : suggestedStart);
+  const others = openSessions(task).filter(s => s.id !== session?.id);
+  const [minutes, setMinutes] = React.useState<number>(() => defaultSessionMinutes(task, session));
   const [picking, setPicking] = React.useState<'date' | 'time' | null>(null);
   // Once the time is chosen by hand, changing the day or length must not
   // move it; until then it follows the first free slot.
@@ -78,12 +86,21 @@ export function WorkTimeModal({
       <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={onClose}>
         <View style={styles.content} onStartShouldSetResponder={() => true}>
           <View style={styles.header}>
-            <Text allowFontScaling={false} style={styles.title}>⏱ Plan work time</Text>
+            <Text allowFontScaling={false} style={styles.title}>{planned ? '⏱ Move session' : '⏱ Plan work time'}</Text>
             <TouchableOpacity style={styles.closeBtn} onPress={onClose} accessibilityLabel="Close">
               <Text allowFontScaling={false} style={styles.closeText}>✕</Text>
             </TouchableOpacity>
           </View>
           <Text allowFontScaling={false} style={styles.taskTitle} numberOfLines={2}>{task.title}</Text>
+          {others.length > 0 ? (
+            <Text allowFontScaling={false} style={styles.hint}>
+              {planned ? 'Moving one session. ' : 'Adding another session. '}
+              {others.length === 1 ? '1 other is' : `${others.length} others are`} planned:{' '}
+              {others.slice(0, 3).map(s => s.start.toLocaleDateString('en-US', { weekday: 'short' }) + ' '
+                + formatTimeOfDay(minutesFromDate(s.start), timeFormat)).join(', ')}
+              {others.length > 3 ? ', …' : ''}
+            </Text>
+          ) : null}
           {task.dueDate ? (
             <Text allowFontScaling={false} style={styles.hint}>
               Due {task.allDay !== false
@@ -135,11 +152,11 @@ export function WorkTimeModal({
 
           <View style={styles.actions}>
             {planned ? (
-              <TouchableOpacity style={styles.secondaryBtn} onPress={() => onClear(task)}>
+              <TouchableOpacity style={styles.secondaryBtn} onPress={() => session && onClear(task, session.id)}>
                 <Text allowFontScaling={false} style={styles.secondaryText}>Take off schedule</Text>
               </TouchableOpacity>
             ) : <View />}
-            <TouchableOpacity style={styles.primaryBtn} onPress={() => onSave(task, start, minutes)}>
+            <TouchableOpacity style={styles.primaryBtn} onPress={() => onSave(task, start, minutes, session?.id)}>
               <Text allowFontScaling={false} style={styles.primaryText}>{planned ? 'Save' : 'Put on schedule'}</Text>
             </TouchableOpacity>
           </View>
