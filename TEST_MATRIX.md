@@ -502,7 +502,7 @@ Diagnostic hidden before release (maintainer decision 2026-09-23): the timings t
 
 | ID | Test | Expected result |
 |---|---|---|
-| WRK-01 | In the Day Planner, tap **⏱** on an undated task | The planner opens on the viewed day at the first free quarter hour that fits an hour, past any timed events. |
+| WRK-01 | In the Day Planner, tap **Plan** on an undated task | The planner opens on the viewed day at the first free quarter hour that fits an hour, past any timed events. |
 | WRK-02 | Choose 1h 30m and **Put on schedule** | A dashed block appears on the Schedule at that time; the task row starts with **⏱** and the time; the task's due date is unchanged. |
 | WRK-03 | Plan a task over an existing event | The block and the event split the hour side by side; neither hides the other. |
 | WRK-04 | Plan a block for now on today | The block is black with **▶ NOW**; within 15 minutes of its end passing, it changes to **MISSED** and **⏱ Replan**. |

@@ -7654,7 +7654,9 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                                     onPress={() => setPlanningTask(task)}
                                     accessibilityLabel={`Plan a time to work on ${task.title}`}
                                   >
-                                    <Text allowFontScaling={false} style={styles.focusPlanText}>⏱</Text>
+                                    {/* A word in a box, not the ⏱ emoji: e-ink draws emoji as a
+                                        faint grey glyph that was easy to miss (CT, 2026-11-16). */}
+                                    <Text allowFontScaling={false} style={styles.focusPlanText}>Plan</Text>
                                   </TouchableOpacity>
                                 )}
 
@@ -8653,8 +8655,18 @@ const styles = StyleSheet.create({
   focusCheck: { fontSize: 17, color: '#000000', marginRight: 8 },
   focusTaskBody: { flex: 1 },
   focusTaskDelete: { paddingHorizontal: 6, paddingVertical: 2 },
-  focusPlanButton: { paddingHorizontal: 6, paddingVertical: 2, minWidth: 32, alignItems: 'center' },
-  focusPlanText: { fontSize: 15, color: '#000000' },
+  focusPlanButton: {
+    borderWidth: 2,
+    borderColor: '#000000',
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    minHeight: 28,
+    marginLeft: 6,
+    marginRight: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  focusPlanText: { fontSize: 13, fontWeight: 'bold', color: '#000000' },
   focusWorkTime: { fontWeight: 'bold' },
   focusTaskDeleteText: { fontSize: 13, color: '#606060' },
   focusTaskText: { fontSize: 13, color: '#000000' },
