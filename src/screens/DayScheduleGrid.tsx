@@ -1,4 +1,4 @@
-import { isPdfPath, LinkedFileMarker } from './LinkedFileMarker';
+import { isPdfPath, LinkedFileMarker, LinkedFilePathsContext } from './LinkedFileMarker';
 import { useTimeFormat } from './TimeFormatContext';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -36,6 +36,11 @@ interface DayScheduleGridProps {
   onPlanTask?: (task: CalendarTask) => void;
   /** Take the task off the schedule; its deadline is untouched. */
   onUnplanTask?: (task: CalendarTask) => void;
+  /**
+   * Open the task's linked note or PDF, or start one when it has none. The
+   * caller decides which from its own record; the block only labels it.
+   */
+  onTaskNoteAction?: (task: CalendarTask) => void;
   /** Short context for a task block, e.g. "due Fri". */
   taskMeta?: (task: CalendarTask) => string;
 }
@@ -73,9 +78,13 @@ function DayScheduleGridInner({
   onEditTask,
   onPlanTask,
   onUnplanTask,
+  onTaskNoteAction,
   taskMeta,
 }: DayScheduleGridProps): React.JSX.Element {
   const timeFormat = useTimeFormat();
+  // The same record the [N]/[PDF] marker reads, so the button and the marker
+  // never disagree about whether a task has a note.
+  const linkedPaths = React.useContext(LinkedFilePathsContext);
   // The grid grows with the hours chosen, unless the caller fits it to the
   // space it has (the Manta Day Planner, which must not scroll).
   const options = { ...DEFAULT_DAY_GRID, startHour, endHour, ...(hourHeight ? { hourHeight } : {}) };
@@ -177,8 +186,19 @@ function DayScheduleGridInner({
                     {meta}
                   </Text>
                 ) : null}
-                {blockHeight >= ACTIONS_MIN_HEIGHT && state !== 'done' && (
+                {blockHeight >= ACTIONS_MIN_HEIGHT && (
                   <View style={styles.blockActions}>
+                    {/* The note comes first: when a block says NOW, opening
+                        the work is the next thing to do. It stays on a ticked
+                        block too, since that is where the finished work is. */}
+                    {onTaskNoteAction && (
+                      <TouchableOpacity style={styles.blockActionBtn} onPress={() => onTaskNoteAction(task)}>
+                        <Text allowFontScaling={false} style={[styles.blockAction, inverted && styles.workTextNow]} numberOfLines={1}>
+                          {noteActionLabel(linkedPaths[task.uid])}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    {state !== 'done' && (<>
                     <TouchableOpacity style={styles.blockActionBtn} onPress={() => onPlanTask?.(task)}>
                       <Text allowFontScaling={false} style={[styles.blockAction, inverted && styles.workTextNow]} numberOfLines={1}>
                         {state === 'missed' ? '⏱ Replan' : '⏱ Move'}
@@ -191,6 +211,7 @@ function DayScheduleGridInner({
                     >
                       <Text allowFontScaling={false} style={[styles.blockDelete, inverted && styles.workTextNow]}>✕</Text>
                     </TouchableOpacity>
+                    </>)}
                   </View>
                 )}
               </View>
@@ -228,7 +249,7 @@ function DayScheduleGridInner({
                   onPress={() => onNoteAction(event, existingPath)}
                 >
                   <Text allowFontScaling={false} style={styles.blockAction} numberOfLines={1}>
-                    {existingPath ? (isPdfPath(existingPath) ? '📄 Open PDF' : '📂 Open Note') : '📝 Create Note'}
+                    {noteActionLabel(existingPath)}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.blockDeleteBtn} onPress={() => onDeleteEvent(event)}>
@@ -256,6 +277,14 @@ const GUTTER = 62;
  * these sizes; drawing all three overflowed a clipped box and the lines
  * collided.
  */
+/** One wording for events and work blocks, so one habit works on both. */
+function noteActionLabel(path?: string): string {
+  if (!path) {
+    return '📝 Create Note';
+  }
+  return isPdfPath(path) ? '📄 Open PDF' : '📂 Open Note';
+}
+
 const ACTIONS_MIN_HEIGHT = 46;
 const META_MIN_HEIGHT = 66;
 

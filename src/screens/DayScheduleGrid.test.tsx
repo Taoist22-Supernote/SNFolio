@@ -2,6 +2,7 @@ import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { DayScheduleGrid } from './DayScheduleGrid';
+import { LinkedFilePathsContext } from './LinkedFileMarker';
 import { withWorkTime } from '../domain/workBlocks';
 import { CalendarEvent, CalendarTask } from '../domain/types';
 
@@ -25,10 +26,15 @@ const essay: CalendarTask = withWorkTime(
 );
 const meeting: CalendarEvent = { uid: 'm', summary: 'Team meeting', start: at(10), end: at(11), allDay: false, attendees: [] };
 
-function render(now: Date, handlers: Partial<React.ComponentProps<typeof DayScheduleGrid>> = {}) {
+function render(
+  now: Date,
+  handlers: Partial<React.ComponentProps<typeof DayScheduleGrid>> = {},
+  linkedPaths: Record<string, string> = {},
+) {
   let tree!: TestRenderer.ReactTestRenderer;
   act(() => {
     tree = TestRenderer.create(
+      <LinkedFilePathsContext.Provider value={linkedPaths}>
       <DayScheduleGrid
         events={[meeting]}
         startHour={8}
@@ -42,7 +48,8 @@ function render(now: Date, handlers: Partial<React.ComponentProps<typeof DaySche
         now={now}
         taskMeta={() => 'due Fri'}
         {...handlers}
-      />,
+      />
+      </LinkedFilePathsContext.Provider>,
     );
   });
   return tree;
@@ -89,5 +96,37 @@ describe('work blocks on the schedule', () => {
     expect(onToggleTask).toHaveBeenCalledWith(essay);
     expect(onPlanTask).toHaveBeenCalledWith(essay);
     expect(onUnplanTask).toHaveBeenCalledWith(essay);
+  });
+
+  test('a block with no note offers to create one', () => {
+    const onTaskNoteAction = jest.fn();
+    // No meeting: its own Create Note has the same label.
+    const tree = render(at(9), { onTaskNoteAction, events: [] });
+    pressLabel(tree, '📝 Create Note');
+    expect(onTaskNoteAction).toHaveBeenCalledWith(essay);
+  });
+
+  test('a block opens the note or PDF linked to its task', () => {
+    const onTaskNoteAction = jest.fn();
+    const withNote = render(at(14, 20), { onTaskNoteAction }, { essay: '/storage/emulated/0/Note/Task Notes/Essay.note' });
+    expect(textOf(withNote)).toContain('📂 Open Note');
+    pressLabel(withNote, '📂 Open Note');
+    expect(onTaskNoteAction).toHaveBeenCalledWith(essay);
+
+    const withPdf = render(at(9), { onTaskNoteAction }, { essay: '/storage/emulated/0/Document/Reading.pdf' });
+    expect(textOf(withPdf)).toContain('📄 Open PDF');
+  });
+
+  test('an event\'s note does not label a task block', () => {
+    const text = textOf(render(at(9), { onTaskNoteAction: jest.fn() }, { m: '/storage/emulated/0/Note/Meeting.note' }));
+    expect(text).toContain('📝 Create Note');
+  });
+
+  test('a ticked block keeps its note but not Move or ✕', () => {
+    const done = { ...essay, completed: true, status: 'done' as const };
+    const text = textOf(render(at(16), { onTaskNoteAction: jest.fn(), workTasks: [done] }, { essay: '/x/Essay.note' }));
+    expect(text).toContain('📂 Open Note');
+    expect(text).not.toContain('⏱ Move');
+    expect(text).not.toContain('⏱ Replan');
   });
 });

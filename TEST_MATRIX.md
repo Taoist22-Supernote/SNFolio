@@ -511,3 +511,6 @@ Diagnostic hidden before release (maintainer decision 2026-09-23): the timings t
 | WRK-07 | Edit the planned task's title in the task form | The block keeps its time. |
 | WRK-08 | Sync a planned CalDAV task, then restart SNFolio | The work time survives both; the server's copy has no new fields. |
 | WRK-09 | Back up and restore a workspace with planned tasks | The blocks return at the same times. |
+| WRK-10 | On a block whose task has a linked note, tap **📂 Open Note**; on one with a PDF, **📄 Open PDF**; on one with neither, **📝 Create Note** | The note or PDF opens; Create Note opens the usual task-note form, and the new note is then linked to the task (the block says Open Note). |
+| WRK-11 | Tick a block, then tap its note button | The finished block still opens its note; Move and ✕ are gone. |
+| WRK-12 | Expand a task's subtasks in the Day Planner and tap **Plan** on one | The subtask gets its own block; ticking that block completes only the subtask. |

@@ -694,6 +694,7 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     editTask: (task: CalendarTask) => { void task; },
     planTask: (task: CalendarTask) => { void task; },
     unplanTask: (task: CalendarTask) => { void task; },
+    taskNote: (task: CalendarTask) => { void task; },
     taskMeta: (task: CalendarTask): string => { void task; return ''; },
   });
   const dayGridHandlers = useMemo(() => ({
@@ -708,6 +709,7 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     onEditTask: (task: CalendarTask) => dayGridLatest.current.editTask(task),
     onPlanTask: (task: CalendarTask) => dayGridLatest.current.planTask(task),
     onUnplanTask: (task: CalendarTask) => dayGridLatest.current.unplanTask(task),
+    onTaskNoteAction: (task: CalendarTask) => dayGridLatest.current.taskNote(task),
     taskMeta: (task: CalendarTask) => dayGridLatest.current.taskMeta(task),
   }), []);
 
@@ -4861,6 +4863,9 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     editTask: handleEditTask,
     planTask: setPlanningTask,
     unplanTask: handleUnplanTask,
+    // Opens the linked note or PDF, or offers to create one: the same path
+    // as the Tasks view's note button.
+    taskNote: handleRequestTaskNote,
     taskMeta: task => task.dueDate
       ? `due ${isSameCalendarDay(task.dueDate, selectedDate) ? 'today' : task.dueDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}`
       : '',
@@ -7523,6 +7528,7 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                     onEditTask={dayGridHandlers.onEditTask}
                     onPlanTask={dayGridHandlers.onPlanTask}
                     onUnplanTask={dayGridHandlers.onUnplanTask}
+                    onTaskNoteAction={dayGridHandlers.onTaskNoteAction}
                     taskMeta={dayGridHandlers.taskMeta}
                     hourHeight={fitScheduleToScreen && scheduleSpace ? fitHourHeight(
                       scheduleSpace - events.filter(e => e.allDay).length * ALL_DAY_ROW_HEIGHT,
