@@ -6,6 +6,10 @@ import { CalendarTask, Project } from '../domain/types';
 import { projectDisplayLabel } from '../domain/projectLabel';
 import { ProjectWeek, projectsNeedingAttention, weeklyTaskSummary } from '../domain/plannerReview';
 import { projectProgress } from '../domain/taskListView';
+import { formatDuration, formatTimeOfDay, minutesFromDate } from '../domain/timeOfDay';
+import { minutesOf } from '../domain/workBlocks';
+import { workWeekSummary } from '../domain/workReview';
+import { useTimeFormat } from './TimeFormatContext';
 
 interface WeeklyReviewViewProps {
   isNomad?: boolean;
@@ -23,6 +27,10 @@ interface WeeklyReviewViewProps {
   onEditTask: (task: CalendarTask) => void;
   onOpenProject: (project: Project) => void;
   onOpenJournal: (date: Date) => void;
+  /** Opens the planner on a missed session, to move it. */
+  onReplanSession?: (task: CalendarTask, sessionId: string) => void;
+  /** The clock sessions are judged against; tests pass a fixed one. */
+  now?: Date;
 }
 
 function blocks(percent: number): string {
@@ -45,8 +53,13 @@ export function WeeklyReviewView({
   onEditTask,
   onOpenProject,
   onOpenJournal,
+  onReplanSession,
+  now,
 }: WeeklyReviewViewProps): React.JSX.Element {
-  const summary = weeklyTaskSummary(tasks, selectedDate, new Date(), weekStartsOn);
+  const clock = now ?? new Date();
+  const timeFormat = useTimeFormat();
+  const summary = weeklyTaskSummary(tasks, selectedDate, clock, weekStartsOn);
+  const work = workWeekSummary(tasks, summary.range, clock, projects, projectOf);
   const attention = projectsNeedingAttention(projects, tasks, projectOf, selectedDate, 5);
   const deadlines = [...summary.due].sort((a, b) =>
     (a.dueDate?.getTime() ?? 0) - (b.dueDate?.getTime() ?? 0)
@@ -120,6 +133,83 @@ export function WeeklyReviewView({
           ))}
         </View>
       ))}
+      </PlannerSection>
+      <PlannerSection
+        id="worktime"
+        title="Work Time"
+        summary={work.plannedMinutes > 0 ? `${formatDuration(work.doneMinutes)} of ${formatDuration(work.plannedMinutes)} done` : 'Nothing planned'}
+      >
+      {!isNomad && (<View style={styles.sectionHeader}>
+        <Text allowFontScaling={false} style={styles.sectionHeaderText}>WORK TIME</Text>
+      </View>)}
+      {work.plannedMinutes === 0 ? (
+        <Text allowFontScaling={false} style={styles.empty}>
+          No work sessions planned this week. Tap Plan on a task in the Day Planner to give it a time.
+        </Text>
+      ) : (<>
+        <View style={styles.metrics}>
+          {([
+            ['Planned', work.plannedMinutes],
+            ['Done', work.doneMinutes],
+            ['Missed', work.missedMinutes],
+            ['Ahead', work.aheadMinutes],
+          ] as Array<[string, number]>).map(([label, minutes], index) => (
+            <View key={label} style={[styles.metric, index === 3 && styles.metricLast]}>
+              <Text allowFontScaling={false} style={styles.workMetricValue}>{formatDuration(minutes)}</Text>
+              <Text allowFontScaling={false} style={styles.metricLabel}>{label}</Text>
+            </View>
+          ))}
+        </View>
+        {/* Said once, because "done" reads like a timesheet and is not one. */}
+        <Text allowFontScaling={false} style={styles.workNote}>
+          Done is the planned length of the sessions you ticked, not time measured.
+        </Text>
+        {work.byProject.map(row => {
+          const percent = row.plannedMinutes > 0 ? (row.doneMinutes / row.plannedMinutes) * 100 : 0;
+          const label = row.project ? projectDisplayLabel(row.project) : 'No project';
+          const body = (<>
+            <Text allowFontScaling={false} style={styles.rowTitle} numberOfLines={1}>{label}</Text>
+            <Text allowFontScaling={false} style={styles.progress}>
+              {`${blocks(percent)} ${formatDuration(row.doneMinutes)} of ${formatDuration(row.plannedMinutes)}`}
+            </Text>
+          </>);
+          return row.project ? (
+            <TouchableOpacity key={row.project.id} style={styles.projectRow} onPress={() => onOpenProject(row.project as Project)}>
+              {body}
+            </TouchableOpacity>
+          ) : (
+            <View key="none" style={styles.projectRow}>{body}</View>
+          );
+        })}
+        {work.missed.length > 0 && (
+          <Text allowFontScaling={false} style={styles.workSubhead}>
+            {`MISSED · ${work.missed.length} session${work.missed.length === 1 ? '' : 's'}`}
+          </Text>
+        )}
+        {/* Replan here so the review ends with the week's misses rescheduled
+            (CT, 2026-11-15), rather than a list to remember for later. */}
+        {work.missed.map(({ task, session }) => (
+          <View key={`${task.uid}:${session.id}`} style={styles.deadlineRow}>
+            <TouchableOpacity style={styles.missedBody} onPress={() => onEditTask(task)}>
+              <Text allowFontScaling={false} style={styles.missedWhen}>
+                {`${session.start.toLocaleDateString('en-US', { weekday: 'short' })} ${formatTimeOfDay(minutesFromDate(session.start), timeFormat)} · ${formatDuration(minutesOf(session))}`}
+              </Text>
+              <Text allowFontScaling={false} style={styles.rowTitle} numberOfLines={1}>
+                <LinkedFileMarker item={task} />{task.title}
+              </Text>
+            </TouchableOpacity>
+            {onReplanSession && (
+              <TouchableOpacity
+                style={styles.replanBtn}
+                onPress={() => onReplanSession(task, session.id)}
+                accessibilityLabel={`Replan the missed session of ${task.title}`}
+              >
+                <Text allowFontScaling={false} style={styles.replanText}>Replan</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ))}
+      </>)}
       </PlannerSection>
       <PlannerSection id="projects" title="Project Check-In" summary={`${attention.length} project(s)`}>
       {!isNomad && (<View style={styles.sectionHeader}>
@@ -231,4 +321,13 @@ const styles = StyleSheet.create({
   weekItem: { flexDirection: 'row', alignItems: 'center', minHeight: 36, paddingLeft: 21, paddingRight: 9 },
   weekItemText: { flex: 1, fontSize: 13, color: '#000000' },
   weekMore: { fontSize: 12, color: '#404040', paddingLeft: 21, paddingVertical: 4 },
+  // Durations ("12h 30m") are wider than the counts above, so smaller.
+  workMetricValue: { fontSize: 19, fontWeight: 'bold', color: '#000000' },
+  workNote: { fontSize: 12, color: '#303030', paddingHorizontal: 9, paddingVertical: 6 },
+  workSubhead: { fontSize: 13, fontWeight: 'bold', color: '#000000', paddingHorizontal: 9, paddingTop: 10, paddingBottom: 4 },
+  missedBody: { flex: 1, marginRight: 10 },
+  missedWhen: { fontSize: 12, color: '#000000' },
+  // Bordered word, matching the Day Planner's Plan button, not an emoji.
+  replanBtn: { borderWidth: 2, borderColor: '#000000', borderRadius: 4, paddingHorizontal: 10, paddingVertical: 6, minHeight: 36, justifyContent: 'center' },
+  replanText: { fontSize: 13, fontWeight: 'bold', color: '#000000' },
 });

@@ -521,3 +521,6 @@ Diagnostic hidden before release (maintainer decision 2026-09-23): the timings t
 | WRK-17 | **⏱ Move** one of two sessions, then **✕** it | The planner says "Move session" and names only the other session; ✕ removes that block only, and the other session and the due date are unchanged. |
 | WRK-18 | Tick the task itself in its row | All its blocks read done; tapping the tick on one of them reopens the task. |
 | WRK-19 | Sync a task with two sessions, restart, then back up and restore | Both sessions, and which one is ticked, survive all three; the server copy has no new fields. |
+| WRK-20 | With sessions planned this week (some ticked, one missed, one ahead), open **Planner ▾ → Weekly Review** | **WORK TIME** shows Planned / Done / Missed / Ahead that add up; one row per Project with its blocks and "done of planned"; tasks with no Project under **No project**. |
+| WRK-21 | Tap **Replan** on a missed session in the review | The planner opens on that session ("Move session"); saving moves it, and it leaves the missed list. Tapping the row itself opens the task. |
+| WRK-22 | On a Nomad, use the **Work Time** shortcut at the top of the review | It opens and scrolls to the section; its collapsed summary reads e.g. "1h 30m of 3h done". |

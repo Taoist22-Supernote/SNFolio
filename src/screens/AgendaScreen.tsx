@@ -7828,6 +7828,7 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
               weeklyNoteExists={weeklyNoteExists}
               onOpenWeeklyNote={() => void handleOpenWeeklyNote()}
               onEditTask={handleEditTask}
+              onReplanSession={(task, sessionId) => setPlanning({ task, sessionId })}
               onOpenProject={project => {
                 setOpenProject(project);
                 setViewMode('para');

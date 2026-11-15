@@ -6,8 +6,8 @@ export const PLANNER_SECTIONS = [
   ['journal', 'Journal'], ['focus', 'Focus'], ['schedule', 'Schedule'],
   ['tasks', 'Tasks'], ['projects', 'Projects'], ['tomorrow', 'Tomorrow'],
 ] as const;
-const WEEKLY_SECTIONS = [['thisweek', 'This Week'], ['projects', 'Projects'], ['deadlines', 'Deadlines'], ['journal', 'Journals']] as const;
-type SectionId = typeof PLANNER_SECTIONS[number][0] | 'deadlines' | 'thisweek';
+const WEEKLY_SECTIONS = [['thisweek', 'This Week'], ['worktime', 'Work Time'], ['projects', 'Projects'], ['deadlines', 'Deadlines'], ['journal', 'Journals']] as const;
+type SectionId = typeof PLANNER_SECTIONS[number][0] | 'deadlines' | 'thisweek' | 'worktime';
 interface SectionContext {
   expanded: Partial<Record<SectionId, boolean>>;
   toggle: (id: SectionId) => void;
