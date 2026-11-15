@@ -98,7 +98,7 @@ import {
   taskToCaldavItem,
 } from '../domain/taskSync';
 import { LASSO_BUTTON_ID, LASSO_PRESS_EVENT, TOOLBAR_BUTTON_ID } from '../domain/buttonIds';
-import { dueResurfaceAtoms, type AtomsAction, type ResurfaceAtom, type ResurfaceSummary } from '../domain/atomsResurface';
+import { dueResurfaceAtoms, nextInboxAtom, resurfaceStripLabel, shownInboxAtom, type AtomsAction, type ResurfaceAtom, type ResurfaceSummary } from '../domain/atomsResurface';
 import { openResurfaceSource, readAtomsResurface, recordAtomsAction } from '../supernote/atomsBridge';
 import { ResurfacePanel } from './ResurfacePanel';
 import { parseCapturedText, resolveDateOrder, ParsedCapture } from '../domain/captureParser';
@@ -366,6 +366,11 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   const [showResurface, setShowResurface] = useState(false);
   const [showAtomsResurface, setShowAtomsResurface] = useState<boolean>(() => calendarStorage.getSettings().showAtomsResurface !== false);
   const [resurfaceMessage, setResurfaceMessage] = useState('');
+  // The Atoms Inbox reminder in the same strip (CT, 2026-11-15): one waiting
+  // atom at a time, moving on each time SNFolio is opened from the toolbar.
+  const [inboxShownId, setInboxShownId] = useState<string | undefined>(() => calendarStorage.getSettings().atomsInboxShownId);
+  /** The toolbar opening the Inbox last moved on for, so re-reads in between don't rotate it. */
+  const inboxRotatedFor = useRef<number | null>(null);
   const [syncPhase, setSyncPhase] = useState<'idle' | 'syncing' | 'success' | 'partial' | 'error'>('idle');
   const [lastSuccessfulSync, setLastSuccessfulSync] = useState<string>('');
   const [syncDetails, setSyncDetails] = useState<string[]>([]);
@@ -4684,10 +4689,21 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   useEffect(() => {
     if (!needsAtomsList) return;
     let live = true;
+    const opening = atomsRefresh;
     readAtomsResurface().then(read => {
       if (!live) return;
       setAtomsSummary(read.summary);
       setAtomsActions(read.actions);
+      // Move on once per opening; changing day or view re-reads the file
+      // but keeps the same atom on screen.
+      if (read.summary && inboxRotatedFor.current !== opening) {
+        inboxRotatedFor.current = opening;
+        const next = nextInboxAtom(read.summary.inbox, calendarStorage.getSettings().atomsInboxShownId);
+        if (next) {
+          setInboxShownId(next.id);
+          calendarStorage.updateSettings({ atomsInboxShownId: next.id });
+        }
+      }
     });
     return () => {
       live = false;
@@ -4695,6 +4711,10 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   }, [needsAtomsList, atomsRefresh, selectedDate]);
 
   const resurfaceDue: ResurfaceAtom[] = dueResurfaceAtoms(atomsSummary, atomsActions, Date.now());
+  const inboxShown = atomsSummary ? shownInboxAtom(atomsSummary.inbox, inboxShownId) : undefined;
+  const resurfaceLabel = atomsSummary
+    ? resurfaceStripLabel(resurfaceDue.length, atomsSummary.inbox, inboxShown, Date.now())
+    : '';
 
   /** Records a Day Planner tap for Atoms; the idea drops out here at once. */
   const tellAtoms = async (atom: ResurfaceAtom, action: 'seen' | 'dismiss'): Promise<boolean> => {
@@ -7584,7 +7604,10 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                 <View style={[styles.panel, !isNomad && isWideScreen && styles.panelHalf]}>
                   {/* Resurface is one line at the top (CT, 2026-11-10): seen
                       every time, without pushing tasks down the column. Hidden
-                      unless the Atoms plugin has shared its list. */}
+                      unless the Atoms plugin has shared its list. The Atoms
+                      Inbox shares the line as a reminder only (CT,
+                      2026-11-15): no button of its own, processing stays in
+                      Atoms. */}
                   {atomsSummary && showAtomsResurface ? (
                     resurfaceDue.length ? (
                       <TouchableOpacity
@@ -7595,13 +7618,13 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
                           setShowResurface(true);
                         }}>
                         <Text allowFontScaling={false} style={styles.resurfaceStripText} numberOfLines={1}>
-                          {`💡 ${resurfaceDue.length} idea${resurfaceDue.length === 1 ? '' : 's'} to resurface`}
+                          {resurfaceLabel}
                         </Text>
                         <Text allowFontScaling={false} style={styles.resurfaceStripAction}>›</Text>
                       </TouchableOpacity>
                     ) : (
                       <View style={styles.resurfaceStripQuiet}>
-                        <Text allowFontScaling={false} style={styles.resurfaceStripQuietText} numberOfLines={1}>💡 Nothing to resurface today</Text>
+                        <Text allowFontScaling={false} style={styles.resurfaceStripQuietText} numberOfLines={1}>{resurfaceLabel}</Text>
                       </View>
                     )
                   ) : null}

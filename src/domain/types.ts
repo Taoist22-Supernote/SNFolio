@@ -381,6 +381,11 @@ export interface CalendarSettings {
   nomadPlannerSections?: Partial<Record<'schedule' | 'journal' | 'focus' | 'tasks' | 'projects' | 'tomorrow', boolean>>;
   /** Day Planner Resurface strip from the Atoms plugin; absent = shown. */
   showAtomsResurface?: boolean;
+  /**
+   * The Atoms Inbox atom the strip showed last, so each opening of SNFolio
+   * moves on to the next one, across restarts too.
+   */
+  atomsInboxShownId?: string;
   hideAllDayEvents: boolean; // default: false
   hideSoloEvents: boolean; // default: false
   caldavEnabled?: boolean;

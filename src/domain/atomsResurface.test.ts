@@ -1,8 +1,12 @@
 import {
   actionsFileText,
+  AtomsInbox,
   dueResurfaceAtoms,
+  nextInboxAtom,
   parseAtomsActions,
   parseResurfaceSummary,
+  resurfaceStripLabel,
+  shownInboxAtom,
   sinceLabel,
   withAction,
 } from './atomsResurface';
@@ -80,5 +84,46 @@ describe('actions for Atoms', () => {
     expect(sinceLabel(NOW - 3 * DAY, NOW)).toBe('3 days');
     expect(sinceLabel(NOW - 35 * DAY, NOW)).toBe('5 weeks');
     expect(sinceLabel(NOW - 95 * DAY, NOW)).toBe('3 months');
+  });
+});
+
+describe('Inbox reminder', () => {
+  const inboxAtom = (id: string, daysAgo: number) => ({ id, title: `Fleeting ${id}`, words: 'w', created: NOW - daysAgo * DAY });
+  const inbox: AtomsInbox = { count: 3, atoms: [inboxAtom('x', 12), inboxAtom('y', 5), inboxAtom('z', 1)] };
+
+  it('reads the Inbox, and an Atoms without it reads as empty', () => {
+    const s = parseResurfaceSummary(summaryText({ inbox: { count: 7, atoms: [inboxAtom('x', 12), { id: 'bad' }] } }));
+    expect(s?.inbox).toEqual({ count: 7, atoms: [inboxAtom('x', 12)] });
+    expect(parseResurfaceSummary(summaryText())?.inbox).toEqual({ count: 0, atoms: [] });
+    expect(parseResurfaceSummary(summaryText({ inbox: 'nonsense' }))?.inbox).toEqual({ count: 0, atoms: [] });
+  });
+
+  it('a count smaller than the list is raised to the list', () => {
+    expect(parseResurfaceSummary(summaryText({ inbox: { count: 1, atoms: [inboxAtom('x', 1), inboxAtom('y', 2)] } }))?.inbox.count).toBe(2);
+  });
+
+  it('each opening moves to the next atom, wrapping to the oldest', () => {
+    expect(nextInboxAtom(inbox)?.id).toBe('x');
+    expect(nextInboxAtom(inbox, 'x')?.id).toBe('y');
+    expect(nextInboxAtom(inbox, 'y')?.id).toBe('z');
+    expect(nextInboxAtom(inbox, 'z')?.id).toBe('x');
+  });
+
+  it('when the last one shown has left the Inbox, starts from the oldest', () => {
+    expect(nextInboxAtom(inbox, 'gone')?.id).toBe('x');
+    expect(shownInboxAtom(inbox, 'gone')?.id).toBe('x');
+    expect(shownInboxAtom(inbox, 'y')?.id).toBe('y');
+    expect(nextInboxAtom({ count: 0, atoms: [] }, 'x')).toBeUndefined();
+  });
+
+  it('strip text: Resurface first, then the Inbox count, the atom and how long it has waited', () => {
+    expect(resurfaceStripLabel(3, inbox, inbox.atoms[0], NOW)).toBe('💡 Resurface 3 · 📥 Inbox 3 · Fleeting x (12 days)');
+    expect(resurfaceStripLabel(0, inbox, inbox.atoms[2], NOW)).toBe('💡 Nothing to resurface · 📥 Inbox 3 · Fleeting z (1 day)');
+  });
+
+  it('an empty Inbox leaves the strip as it was', () => {
+    const empty = { count: 0, atoms: [] };
+    expect(resurfaceStripLabel(2, empty, undefined, NOW)).toBe('💡 2 ideas to resurface');
+    expect(resurfaceStripLabel(0, empty, undefined, NOW)).toBe('💡 Nothing to resurface today');
   });
 });

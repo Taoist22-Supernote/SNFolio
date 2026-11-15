@@ -4,6 +4,8 @@
  *
  * - Atoms writes `resurface.json`: atoms that may come back, least recently
  *   seen first, plus how many days count as "a while".
+ *   Since 2026-11-15 it also carries `inbox`: the fleeting atoms still to be
+ *   processed, which the Day Planner strip shows one at a time as a reminder.
  * - SNFolio writes `from-snfolio.json`: what was tapped here. Atoms applies
  *   those the next time it opens. SNFolio never writes Atoms' own data.
  */
@@ -23,10 +25,26 @@ export interface ResurfaceAtom {
   source: { kind: string; path: string; title: string; page: number };
 }
 
+export interface InboxAtom {
+  id: string;
+  title: string;
+  words: string;
+  created: number;
+}
+
+export interface AtomsInbox {
+  /** Every fleeting atom in Atoms; `atoms` may stop short of it. */
+  count: number;
+  /** Oldest first, as Atoms wrote them. */
+  atoms: InboxAtom[];
+}
+
 export interface ResurfaceSummary {
   writtenAt: number;
   resurfaceDays: number;
   atoms: ResurfaceAtom[];
+  /** Empty when Atoms is older than the Inbox hand-off. */
+  inbox: AtomsInbox;
 }
 
 export type AtomsActionKind = 'seen' | 'dismiss';
@@ -65,7 +83,52 @@ export function parseResurfaceSummary(raw: string | null): ResurfaceSummary | nu
       });
     }
   }
-  return { writtenAt: parsed.writtenAt, resurfaceDays: parsed.resurfaceDays, atoms };
+  return { writtenAt: parsed.writtenAt, resurfaceDays: parsed.resurfaceDays, atoms, inbox: parseInbox(parsed.inbox) };
+}
+
+function parseInbox(raw: any): AtomsInbox {
+  const atoms: InboxAtom[] = [];
+  for (const a of Array.isArray(raw?.atoms) ? raw.atoms : []) {
+    if (a && isStr(a.id) && isStr(a.title) && isStr(a.words) && isNum(a.created)) {
+      atoms.push({ id: a.id, title: a.title, words: a.words, created: a.created });
+    }
+  }
+  // A count smaller than the list would read as nonsense ("Inbox 2" over
+  // five rotating atoms); trust whichever is larger.
+  const count = isNum(raw?.count) ? Math.max(Math.floor(raw.count), atoms.length) : atoms.length;
+  return { count, atoms };
+}
+
+/**
+ * The Inbox atom to show after SNFolio is opened again (CT, 2026-11-15): the
+ * one after the last shown, wrapping to the oldest. A reminder that rotates,
+ * because several usually wait at once. When the last one shown has left the
+ * Inbox (promoted, merged, deleted), starts again from the oldest.
+ */
+export function nextInboxAtom(inbox: AtomsInbox, lastShownId?: string): InboxAtom | undefined {
+  if (inbox.atoms.length === 0) {
+    return undefined;
+  }
+  const at = lastShownId ? inbox.atoms.findIndex(a => a.id === lastShownId) : -1;
+  return inbox.atoms[at < 0 ? 0 : (at + 1) % inbox.atoms.length];
+}
+
+/** The atom being shown now, between openings: the same one, or the oldest if it has gone. */
+export function shownInboxAtom(inbox: AtomsInbox, shownId?: string): InboxAtom | undefined {
+  return inbox.atoms.find(a => a.id === shownId) ?? inbox.atoms[0];
+}
+
+/**
+ * The strip's one line. Resurface comes first, as before; the Inbox part is
+ * added only when atoms are waiting, and its title is what gets cut short on
+ * a narrow screen, since the line truncates at its end.
+ */
+export function resurfaceStripLabel(dueCount: number, inbox: AtomsInbox, shown: InboxAtom | undefined, now: number): string {
+  if (inbox.count === 0 || !shown) {
+    return dueCount > 0 ? `💡 ${dueCount} idea${dueCount === 1 ? '' : 's'} to resurface` : '💡 Nothing to resurface today';
+  }
+  const resurface = dueCount > 0 ? `💡 Resurface ${dueCount}` : '💡 Nothing to resurface';
+  return `${resurface} · 📥 Inbox ${inbox.count} · ${shown.title} (${sinceLabel(shown.created, now)})`;
 }
 
 export function parseAtomsActions(raw: string | null): AtomsAction[] {

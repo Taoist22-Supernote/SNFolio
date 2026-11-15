@@ -526,3 +526,12 @@ Diagnostic hidden before release (maintainer decision 2026-09-23): the timings t
 | WRK-22 | On a Nomad, use the **Work Time** shortcut at the top of the review | It opens and scrolls to the section; its collapsed summary reads e.g. "1h 30m of 3h done". |
 | WRK-23 | Plan a session over an event (save past the warning), and another in a free hour | The first block's title line says **CLASH**, the other does not; while in progress it reads **▶ NOW · CLASH**; once its time passes it reads **MISSED** only; Move it clear and CLASH goes away. |
 | WRK-24 | Add an event on a planned block's time (on the device or by CalDAV sync) | The block now says **CLASH** without being replanned. |
+
+## Atoms Inbox reminder (needs Atoms 103902a or later)
+
+| ID | Test | Expected result |
+|---|---|---|
+| INB-01 | With 2+ fleeting atoms in Atoms' Inbox, open Atoms once (so it rewrites its file), then open SNFolio's Day Planner | The strip reads **💡 … · 📥 Inbox N · <oldest atom's title> (age)**. |
+| INB-02 | Close SNFolio and open it again from the toolbar, a few times | Each opening shows the next waiting atom, then wraps to the oldest. Changing the day in between does not change it. |
+| INB-03 | Promote every Inbox atom in Atoms, then open SNFolio | The Inbox part disappears; the strip reads as before (ideas to resurface, or nothing to resurface today). |
+| INB-04 | With the old Atoms 0.3.0-beta installed | The strip looks exactly as in 0.1.33; nothing about an Inbox. |
