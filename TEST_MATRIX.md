@@ -550,3 +550,16 @@ Diagnostic hidden before release (maintainer decision 2026-09-23): the timings t
 | STP-05 | Edit a task with no due date | Instead of the button: "Save a due date to plan this task from steps." |
 | STP-06 | Edit a subtask | No Plan from steps button (a subtask cannot have subtasks). |
 | STP-07 | Open Plan from steps and press **Cancel** | Nothing is added. |
+
+## Class week at the top of a Project — local validation
+
+| ID | Test | Expected result |
+|---|---|---|
+| WK-01 | Open a Class Project with a start date and an end (due) date, during the class | Under the Project's name: **📆 Week N of M · Nov 16 – 22 · X due · Y sessions planned ▾**, with a **⚙ Weeks** button beside it. |
+| WK-02 | Tap the week line | It unfolds this week's open deadlines (**· due**) and planned sessions (**· ⏱ time**), in day order. Tapping one opens that task's Edit Task form. Tap the line again to fold it. |
+| WK-03 | A week with nothing due or planned | Unfolded, it says **Nothing due or planned this week.** |
+| WK-04 | Tap **⚙ Weeks** | Project settings opens, with the Weeks settings (start date, Weeks run, Create Week Folders) in it. |
+| WK-05 | Open a Class Project with no start date | The line reads **📆 Weeks not set · Set start date**; tapping it opens the start date picker. |
+| WK-06 | A General or Work Project with no start date | No week line. With a start date, it gets one like a class. |
+| WK-07 | A Project whose start date is still ahead, or whose end date has passed | **📆 Starts Mon, Jan 5 · Week 1**, or **📆 Finished · N weeks**; tapping opens the settings. |
+| WK-08 | Change **Weeks run** to another weekday | The week line's dates follow the new week start. |

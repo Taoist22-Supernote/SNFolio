@@ -16,6 +16,9 @@ import {
   taskOverdue,
 } from '../domain/taskListView';
 import { ParaFilesPanel } from './ParaFilesPanel';
+import { useTimeFormat } from './TimeFormatContext';
+import { classWeekLabel, classWeekSummary } from '../domain/classWeek';
+import { formatTimeOfDay, minutesFromDate } from '../domain/timeOfDay';
 import { ParaFolderEntry } from '../supernote/exportService';
 import { HandwritingTextInput, HandwritingTextInputHandle } from './HandwritingTextInput';
 import { deriveProjectShortLabel, normalizeProjectShortLabel } from '../domain/projectLabel';
@@ -201,6 +204,11 @@ export function ProjectDetailView({
   const overdue = projectOverdue(project);
 
   const [classificationOpen, setClassificationOpen] = React.useState(false);
+  const timeFormat = useTimeFormat();
+  // Where the class is in its weeks, at the top of the Project; tapping it
+  // unfolds what this week holds (CT, 2026-11-17).
+  const thisWeek = classWeekSummary(project, mine, new Date());
+  const [weekOpen, setWeekOpen] = React.useState(false);
   const [renaming, setRenaming] = React.useState<boolean>(false);
   const [draftName, setDraftName] = React.useState<string>(project.name);
   const [draftShortLabel, setDraftShortLabel] = React.useState<string>(project.shortLabel || '');
@@ -731,6 +739,50 @@ export function ProjectDetailView({
         </View>
       )}
 
+      {thisWeek && (
+        <View style={styles.weekBox}>
+          <View style={styles.weekLine}>
+            <TouchableOpacity
+              style={styles.weekLabelBtn}
+              onPress={() => {
+                if (thisWeek.state === 'unset') {onSetClassStart();}
+                else if (thisWeek.state === 'during') {setWeekOpen(value => !value);}
+                else {setClassificationOpen(true);}
+              }}
+              accessibilityRole="button"
+              accessibilityState={thisWeek.state === 'during' ? { expanded: weekOpen } : undefined}
+            >
+              <Text allowFontScaling={false} style={styles.weekLabel}>
+                {classWeekLabel(thisWeek)}{thisWeek.state === 'during' ? (weekOpen ? '  ▴' : '  ▾') : ''}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.headBtn} onPress={() => setClassificationOpen(true)} accessibilityLabel="Open the Weeks settings">
+              <Text allowFontScaling={false} style={styles.headBtnText}>⚙ Weeks</Text>
+            </TouchableOpacity>
+          </View>
+          {thisWeek.state === 'during' && weekOpen && (
+            <View>
+              {thisWeek.items.length === 0 && (
+                <Text allowFontScaling={false} style={styles.hint}>Nothing due or planned this week.</Text>
+              )}
+              {thisWeek.items.map(item => (
+                <TouchableOpacity
+                  key={item.kind === 'session' ? `s-${item.task.uid}-${item.session.id}` : `d-${item.task.uid}`}
+                  style={styles.upcomingRow}
+                  onPress={() => onEditTask(item.task)}
+                >
+                  <Text allowFontScaling={false} style={styles.upcomingWhen}>
+                    {item.at.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    {item.kind === 'session' ? ` · ⏱ ${formatTimeOfDay(minutesFromDate(item.at), timeFormat)}` : ' · due'}
+                  </Text>
+                  <Text allowFontScaling={false} style={styles.taskText} numberOfLines={1}>{item.task.title}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+
       <View>
         <TouchableOpacity style={styles.dueBtn} onPress={() => setClassificationOpen(value => !value)}>
           <Text allowFontScaling={false} style={styles.dueText}>
@@ -1040,6 +1092,10 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   dueText: { fontSize: 14, fontWeight: 'bold', color: '#000000' },
+  weekBox: { borderWidth: 2, borderColor: '#000000', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 4, marginBottom: 6 },
+  weekLine: { flexDirection: 'row', alignItems: 'center' },
+  weekLabelBtn: { flex: 1, minHeight: 40, justifyContent: 'center' },
+  weekLabel: { fontSize: 15, fontWeight: 'bold', color: '#000000' },
   progressText: { fontSize: 14, color: '#000000' },
   body: { flex: 1 },
   sectionHeading: {

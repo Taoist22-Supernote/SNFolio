@@ -241,3 +241,61 @@ test('Move… on a file linked from elsewhere suggests the week of its linked it
   expect(onMoveFile).toHaveBeenCalledWith('/Note/Lecture.note', '/Note/SNFolio/Projects/IDS105/Week 05');
   act(() => tree.unmount());
 });
+
+describe('this week, at the top of a class', () => {
+  // PSY 215 from Mon 26 Oct to Sun 27 Dec 2026; today Tue 17 Nov, Week 4 of 9.
+  const psy: Project = {
+    ...classProject, id: 'psy', name: 'Psy 215',
+    classStartDate: new Date(2026, 9, 26), dueDate: new Date(2026, 11, 27),
+  };
+  const post = {
+    uid: 'post', title: 'Draft initial post', completed: false, status: 'todo' as const, createdAt: new Date(2026, 10, 1),
+    dueDate: new Date(2026, 10, 19), allDay: true,
+    workSessions: [{ id: 's1', start: new Date(2026, 10, 18, 13), minutes: 60 }],
+  };
+  beforeEach(() => { jest.useFakeTimers({ now: new Date(2026, 10, 17, 10), advanceTimers: true }); });
+  afterEach(() => { jest.useRealTimers(); });
+
+  test('says which week it is and how loaded it is, and unfolds what it holds', () => {
+    const { tree, props } = render(psy, { tasks: [post], projectOf: () => 'psy' });
+    expect(textOf(tree)).toContain('📆 Week 4 of 9 · Nov 16 – 22 · 1 due · 1 session planned  ▾');
+    expect(textOf(tree)).not.toContain('Wed, Nov 18 · ⏱ 1:00 PM');
+    press(tree, '📆 Week 4 of 9');
+    const text = textOf(tree);
+    expect(text).toContain('Wed, Nov 18 · ⏱ 1:00 PM|Draft initial post');
+    expect(text).toContain('Thu, Nov 19 · due|Draft initial post');
+    press(tree, 'Thu, Nov 19 · due');
+    expect(props.onEditTask).toHaveBeenCalledWith(post);
+    press(tree, '📆 Week 4 of 9');
+    expect(textOf(tree)).not.toContain('Thu, Nov 19 · due');
+    act(() => tree.unmount());
+  });
+
+  test('an empty week says so', () => {
+    const { tree } = render(psy);
+    press(tree, '📆 Week 4 of 9');
+    expect(textOf(tree)).toContain('Nothing due or planned this week.');
+    act(() => tree.unmount());
+  });
+
+  test('⚙ Weeks opens the settings where weeks are set', () => {
+    const { tree } = render(psy);
+    expect(textOf(tree)).not.toContain('Weeks run');
+    press(tree, '⚙ Weeks');
+    expect(textOf(tree)).toContain('Weeks run');
+    act(() => tree.unmount());
+  });
+
+  test('a class with no start date offers to set one', () => {
+    const { tree, props } = render(classProject);
+    press(tree, '📆 Weeks not set · Set start date');
+    expect(props.onSetClassStart).toHaveBeenCalled();
+    act(() => tree.unmount());
+  });
+
+  test('a General project without a start date has no week line', () => {
+    const { tree } = render({ ...classProject, category: 'general' });
+    expect(textOf(tree)).not.toContain('📆');
+    act(() => tree.unmount());
+  });
+});
