@@ -526,6 +526,9 @@ Diagnostic hidden before release (maintainer decision 2026-09-23): the timings t
 | WRK-22 | On a Nomad, use the **Work Time** shortcut at the top of the review | It opens and scrolls to the section; its collapsed summary reads e.g. "1h 30m of 3h done". |
 | WRK-23 | Plan a session over an event (save past the warning), and another in a free hour | The first block's title line says **CLASH**, the other does not; while in progress it reads **▶ NOW · CLASH**; once its time passes it reads **MISSED** only; Move it clear and CLASH goes away. |
 | WRK-24 | Add an event on a planned block's time (on the device or by CalDAV sync) | The block now says **CLASH** without being replanned. |
+| WRK-25 | Plan one session for a task in a Project, then tick its block on the schedule | A box asks **Is the task finished?** **Yes, finish the task** ticks the task, and it leaves Actionable Deliverables and shows under Completed. |
+| WRK-26 | Same, but press **Not yet, keep it open** (or tap outside the box) | The task stays open and in Actionable Deliverables; the status line says it stays open. |
+| WRK-27 | Plan two sessions for a task, tick the first block, then the second | No question after the first; the question comes after the second. Unticking a block never asks. |
 
 ## Atoms Inbox reminder (needs Atoms 103902a or later)
 

@@ -185,7 +185,7 @@ import {
 import { firstPickedFilePath, parentFolderFromPicker } from '../domain/fileSelection';
 import { cleanRelativeNoteSubpath, paraEventNoteFolder } from '../domain/eventNoteRouting';
 import { areaArchiveState, projectArchiveState } from '../domain/paraArchive';
-import { defaultSessionMinutes, findSession, hasWorkTime, openSessions, sessionKey, suggestWorkStart, withoutSession, withSession, withSessionDone, workBlocksForDay, workOverlaps, workTimeLabel } from '../domain/workBlocks';
+import { defaultSessionMinutes, findSession, hasWorkTime, openSessions, sessionKey, suggestWorkStart, ticksLastSession, withoutSession, withSession, withSessionDone, workBlocksForDay, workOverlaps, workTimeLabel } from '../domain/workBlocks';
 import { WorkTimeModal } from './WorkTimeModal';
 
 type SettingsTab = 'sync' | 'notes' | 'app' | 'help';
@@ -441,6 +441,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   const [showDeleteNoteModal, setShowDeleteNoteModal] = useState<boolean>(false);
   /** A task with a linked note awaiting confirmation that only the task is deleted. */
   const [pendingDeleteNoteTask, setPendingDeleteNoteTask] = useState<CalendarTask | null>(null);
+  /** The last planned session was just ticked: is the task finished too? */
+  const [askFinishTask, setAskFinishTask] = useState<CalendarTask | null>(null);
   /** Help & Setup: what a pre-0.1.24 version left queued for deletion; null until checked. */
   const [queuedNoteDeletions, setQueuedNoteDeletions] = useState<{ path: string; exists: boolean }[] | null>(null);
   const [areas, setAreas] = useState<Area[]>([]);
@@ -3035,13 +3037,15 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     if (!session) {
       return;
     }
+    const last = ticksLastSession(current, sessionId);
     const next = withSessionDone(current, sessionId, !session.done);
     calendarStorage.upsertTask(next);
     setTasks([...calendarStorage.getTasks()]);
     if (session.done) {
       setStatusMsg(`Session of "${task.title}" reopened.`);
-    } else if (openSessions(next).length === 0) {
-      setStatusMsg(`Every planned session of "${task.title}" is done. Tick the task in its row when it is finished, or Plan another session.`);
+    } else if (last) {
+      setStatusMsg(`Every planned session of "${task.title}" is done.`);
+      setAskFinishTask(next);
     } else {
       setStatusMsg(`Session of "${task.title}" done. The task stays open.`);
     }
@@ -5281,6 +5285,54 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
       {/* Deleting an event that generated a note. Handwritten pages cannot be
           recovered and there is no undo, so the file is named and keeping it
           is offered as a first-class choice rather than a cancel. */}
+      {/* The last planned session was ticked. Ticking a block finishes only its
+          session, so without this a task whose work was all done stayed in
+          Actionable Deliverables until it was ticked again in its row. */}
+      <Modal visible={askFinishTask !== null} transparent animationType="fade">
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setAskFinishTask(null)}
+        >
+          <View style={styles.actionSheetContentCompact}>
+            <Text allowFontScaling={false} style={styles.actionSheetTitle}>Is the task finished?</Text>
+            <Text allowFontScaling={false} style={styles.bodyTextCenter} numberOfLines={2}>
+              "{askFinishTask?.title}"
+            </Text>
+            <Text allowFontScaling={false} style={styles.previewHint}>
+              Every planned session is done. If there is more to do, keep it open and Plan another session.
+            </Text>
+
+            <TouchableOpacity
+              style={styles.deleteOptionBtnDanger}
+              onPress={() => {
+                const asked = askFinishTask;
+                setAskFinishTask(null);
+                const current = asked && calendarStorage.getTasks().find(t => t.uid === asked.uid);
+                if (current && !isDone(current)) {
+                  handleToggleTask(current).catch(() => undefined);
+                }
+              }}
+            >
+              <Text allowFontScaling={false} style={styles.deleteOptionBtnTextDanger}>☑ Yes, finish the task</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.deleteOptionBtn}
+              onPress={() => {
+                const asked = askFinishTask;
+                setAskFinishTask(null);
+                if (asked) {
+                  setStatusMsg(`"${asked.title}" stays open. Plan another session when you are ready.`);
+                }
+              }}
+            >
+              <Text allowFontScaling={false} style={styles.deleteOptionBtnText}>Not yet, keep it open</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <Modal visible={pendingDeleteNoteTask !== null} transparent animationType="fade">
         <TouchableOpacity
           style={styles.modalOverlay}

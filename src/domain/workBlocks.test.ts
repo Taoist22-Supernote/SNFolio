@@ -9,6 +9,7 @@ import {
   sessionKeyOfWorkBlock,
   sessionsOf,
   suggestWorkStart,
+  ticksLastSession,
   workBlockEvent,
   workBlocksForDay,
   workBlockState,
@@ -88,6 +89,22 @@ describe('planning sessions', () => {
 
   test('a finished task has no open sessions', () => {
     expect(openSessions(planned('essay', [at(9)], 60, done))).toEqual([]);
+  });
+
+  test('ticking the only open session asks whether the task is finished', () => {
+    const one = planned('essay', [at(9)]);
+    expect(ticksLastSession(one, 's1')).toBe(true);
+    const two = planned('essay', [at(9), at(14)]);
+    expect(ticksLastSession(two, 's1')).toBe(false);
+    // The second, once the first is ticked.
+    expect(ticksLastSession(withSessionDone(two, 's1', true), 's2')).toBe(true);
+  });
+
+  test('unticking, a finished task or an unknown session never asks', () => {
+    const ticked = withSessionDone(planned('essay', [at(9)]), 's1', true);
+    expect(ticksLastSession(ticked, 's1')).toBe(false);
+    expect(ticksLastSession(planned('essay', [at(9)], 60, done), 's1')).toBe(false);
+    expect(ticksLastSession(planned('essay', [at(9)]), 's9')).toBe(false);
   });
 });
 

@@ -120,6 +120,18 @@ export function withSessionDone(task: CalendarTask, sessionId: string, done: boo
   };
 }
 
+/**
+ * Ticking this session would leave the task with nothing else planned, so
+ * the planner asks whether the task itself is finished (CT, 2026-11-16).
+ * Ticking a block finishes only that session, which left a task with all its
+ * work done still listed in Actionable Deliverables.
+ */
+export function ticksLastSession(task: CalendarTask, sessionId: string): boolean {
+  const session = findSession(task, sessionId);
+  if (!session || session.done || isDone(task)) {return false;}
+  return openSessions(task).every(open => open.id === sessionId);
+}
+
 export function findSession(task: CalendarTask, sessionId: string | undefined): WorkSession | undefined {
   return sessionId ? sessionsOf(task).find(session => session.id === sessionId) : undefined;
 }
