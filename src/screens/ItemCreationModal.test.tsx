@@ -149,6 +149,24 @@ describe('subtasks on the task form', () => {
     act(() => tree.unmount());
   });
 
+  test('a task with a due date can be planned from steps', () => {
+    const onPlanSteps = jest.fn();
+    const tree = renderForm({ subtasks: [], onAddSubtaskHere: jest.fn(), onPlanSteps });
+    act(() => button(tree, '📋 Plan from steps…').props.onPress());
+    expect(onPlanSteps).toHaveBeenCalledWith(expect.objectContaining({ uid: 'p' }));
+    act(() => tree.unmount());
+  });
+
+  test('without a due date it says what is needed instead', () => {
+    const tree = renderForm({
+      subtasks: [], onAddSubtaskHere: jest.fn(), onPlanSteps: jest.fn(),
+      editingTask: { ...parentTask, dueDate: undefined },
+    });
+    expect(textOf(tree)).toContain('Save a due date to plan this task from steps.');
+    expect(textOf(tree)).not.toContain('Plan from steps…');
+    act(() => tree.unmount());
+  });
+
   test('a subtask that cannot take subtasks is not offered the field', () => {
     // onAddSubtaskHere is withheld for a task that is itself a subtask.
     // Asserted on the control, not the placeholder: a placeholder is a prop

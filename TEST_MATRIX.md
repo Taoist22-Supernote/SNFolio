@@ -538,3 +538,15 @@ Diagnostic hidden before release (maintainer decision 2026-09-23): the timings t
 | INB-02 | Close SNFolio and open it again from the toolbar, a few times | Each opening shows the next waiting atom, then wraps to the oldest. Changing the day in between does not change it. |
 | INB-03 | Promote every Inbox atom in Atoms, then open SNFolio | The Inbox part disappears; the strip reads as before (ideas to resurface, or nothing to resurface today). |
 | INB-04 | With the old Atoms 0.3.0-beta installed | The strip looks exactly as in 0.1.33; nothing about an Inbox. |
+
+## Plan from steps — local validation
+
+| ID | Test | Expected result |
+|---|---|---|
+| STP-01 | Edit a task with a due date (e.g. Sunday) and press **📋 Plan from steps…** beside its subtasks | The form closes and **Plan from steps** opens, naming the task and its due day. No steps are shown until a list is chosen. |
+| STP-02 | Choose **Paper or project** | Five steps appear, from today to the day before it is due (none on the due day), each with a length (1h 30m, 1h, 2h, 1h, 30m). |
+| STP-03 | Move a step with ‹ and ›, drop one with ✕, and write a new name over another; press **Add N steps** | The task's subtasks are the kept steps in order, with the new name, each due on the day shown. Each one has a block on that day's schedule in a free slot; two steps on one day sit one after the other, not on top of each other. |
+| STP-04 | Open the Project the task is in | The new steps are in the same Project. |
+| STP-05 | Edit a task with no due date | Instead of the button: "Save a due date to plan this task from steps." |
+| STP-06 | Edit a subtask | No Plan from steps button (a subtask cannot have subtasks). |
+| STP-07 | Open Plan from steps and press **Cancel** | Nothing is added. |

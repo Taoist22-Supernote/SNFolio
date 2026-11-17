@@ -119,6 +119,12 @@ interface ItemCreationModalProps {
   subtasks?: CalendarTask[];
   onToggleSubtask?: (task: CalendarTask) => void;
   onAddSubtaskHere?: (parent: CalendarTask, title: string) => void;
+  /**
+   * Break this task into steps from a list (Paper, Discussion, Reading), each a
+   * subtask with its own day and session. Offered beside the subtasks; needs a
+   * saved due date to plan back from.
+   */
+  onPlanSteps?: (task: CalendarTask) => void;
   /** Move a subtask within the sequence; `subtasks` is already in order. */
   onReorderSubtask?: (task: CalendarTask, direction: 'up' | 'down') => void;
   /** Open a subtask in this form, in place of its parent. */
@@ -176,7 +182,7 @@ export function ItemCreationModal({
   onDeleteTask,
   onRestoreEvent,
   editingTask,
-  subtasks, onToggleSubtask, onAddSubtaskHere, onReorderSubtask, onEditSubtask, subtaskOf,
+  subtasks, onToggleSubtask, onAddSubtaskHere, onPlanSteps, onReorderSubtask, onEditSubtask, subtaskOf,
   taskNotePath, eventNotePath, onEventNoteAction, onLinkEventNote, onUnlinkNote,
   onTaskNoteAction,
   onLinkTaskNote,
@@ -1267,6 +1273,22 @@ export function ItemCreationModal({
                   </View>
                 )}
 
+                {onPlanSteps && (
+                  editingTask.dueDate ? (
+                    <TouchableOpacity
+                      style={[styles.addSubtaskBtn, styles.planStepsBtn]}
+                      onPress={() => onPlanSteps(editingTask)}
+                      accessibilityLabel="Plan this task from a list of steps"
+                    >
+                      <Text allowFontScaling={false} style={styles.addSubtaskBtnText}>📋 Plan from steps…</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <Text allowFontScaling={false} style={styles.subtaskHint}>
+                      Save a due date to plan this task from steps.
+                    </Text>
+                  )
+                )}
+
                 {subtasks && subtasks.length > 0 && (
                   <Text allowFontScaling={false} style={styles.subtaskHint}>
                     Completing this task completes its subtasks; reopening it reopens them.
@@ -1739,6 +1761,7 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   addSubtaskBtnText: { fontSize: 13, fontWeight: 'bold', color: '#000000' },
+  planStepsBtn: { marginLeft: 0, marginTop: 8, alignSelf: 'flex-start' },
   saveBtnText: {
     color: '#ffffff',
     fontWeight: 'bold',

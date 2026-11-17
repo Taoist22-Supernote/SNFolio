@@ -185,6 +185,8 @@ import {
 import { firstPickedFilePath, parentFolderFromPicker } from '../domain/fileSelection';
 import { cleanRelativeNoteSubpath, paraEventNoteFolder } from '../domain/eventNoteRouting';
 import { areaArchiveState, projectArchiveState } from '../domain/paraArchive';
+import { PlannedStep } from '../domain/stepPlans';
+import { StepPlanModal } from './StepPlanModal';
 import { defaultSessionMinutes, findSession, hasWorkTime, openSessions, sessionKey, suggestWorkStart, ticksLastSession, withoutSession, withSession, withSessionDone, workBlocksForDay, workOverlaps, workTimeLabel } from '../domain/workBlocks';
 import { WorkTimeModal } from './WorkTimeModal';
 
@@ -443,6 +445,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   const [pendingDeleteNoteTask, setPendingDeleteNoteTask] = useState<CalendarTask | null>(null);
   /** The last planned session was just ticked: is the task finished too? */
   const [askFinishTask, setAskFinishTask] = useState<CalendarTask | null>(null);
+  /** The assignment being broken into steps, from its Edit Task form. */
+  const [planningSteps, setPlanningSteps] = useState<(CalendarTask & { dueDate: Date }) | null>(null);
   /** Help & Setup: what a pre-0.1.24 version left queued for deletion; null until checked. */
   const [queuedNoteDeletions, setQueuedNoteDeletions] = useState<{ path: string; exists: boolean }[] | null>(null);
   const [areas, setAreas] = useState<Area[]>([]);
@@ -4378,6 +4382,64 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   });
 
   /**
+   * Adds the steps planned in StepPlanModal as subtasks, each due on its day
+   * with a session in that day's first free slot. Each slot is found with the
+   * steps already placed counted as busy, so two steps on one day follow
+   * each other rather than overlapping.
+   */
+  const handleAddPlannedSteps = trackWorkspaceOperation(async (parent: CalendarTask, steps: PlannedStep[]) => {
+    const stamp = Date.now();
+    const parentMembership = calendarStorage.getMembership(parent.uid);
+    const now = new Date();
+    const added: CalendarTask[] = [];
+    steps.forEach((step, index) => {
+      const uid = `task-${stamp}-${index + 1}`;
+      const draft: CalendarTask = {
+        uid,
+        title: step.title,
+        completed: false,
+        status: 'todo',
+        createdAt: new Date(stamp + index),
+        parentId: parent.uid,
+        dueDate: step.day,
+        allDay: true,
+        caldavCollectionUrl: parent.caldavCollectionUrl,
+      };
+      const start = suggestWorkStart(step.day, eventsOnDay(step.day), calendarStorage.getTasks(), step.minutes, now, scheduleStartHour, scheduleEndHour);
+      const subtask = withSession(draft, start, step.minutes);
+      calendarStorage.upsertTask(subtask);
+      calendarStorage.setMembership(uid, { areaId: parentMembership.areaId, projectId: parentMembership.projectId });
+      added.push(subtask);
+    });
+
+    const reopenedParent = parentReopenedForNewChild(parent);
+    if (reopenedParent) {
+      calendarStorage.upsertTask(reopenedParent);
+    }
+
+    setTasks([...calendarStorage.getTasks()]);
+    setMembershipRevision(value => value + 1);
+    calendarStorage.flush().catch(() => undefined);
+    const summary = `Added ${added.length} step${added.length === 1 ? '' : 's'} under "${parent.title}", each with a session.`;
+    setStatusMsg(summary);
+
+    const errors: string[] = [];
+    for (const subtask of added) {
+      const error = await pushTaskToCaldav(subtask);
+      if (error) {
+        errors.push(error);
+      }
+    }
+    if (reopenedParent) {
+      await pushTaskToCaldav(reopenedParent);
+    }
+    setTasks([...calendarStorage.getTasks()]);
+    if (errors.length) {
+      setStatusMsg(`${summary} CalDAV: ${errors[0]}`);
+    }
+  });
+
+  /**
    * Moves a subtask within its parent's sequence.
    *
    * Local only: a VTODO has no standard property for position, so there is
@@ -5288,6 +5350,19 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
       {/* The last planned session was ticked. Ticking a block finishes only its
           session, so without this a task whose work was all done stayed in
           Actionable Deliverables until it was ticked again in its row. */}
+      {planningSteps && (
+        <StepPlanModal
+          key={planningSteps.uid}
+          task={planningSteps}
+          today={new Date()}
+          onAdd={(parent, steps) => {
+            setPlanningSteps(null);
+            handleAddPlannedSteps(parent, steps).catch(() => undefined);
+          }}
+          onClose={() => setPlanningSteps(null)}
+        />
+      )}
+
       <Modal visible={askFinishTask !== null} transparent animationType="fade">
         <TouchableOpacity
           style={styles.modalOverlay}
@@ -7139,6 +7214,18 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
             onAddSubtaskHere={
               editingTask && canHaveChildren(editingTask, indexByUid(tasks))
                 ? (parent, title) => { void handleAddSubtask(parent, { title }); }
+                : undefined
+            }
+            onPlanSteps={
+              editingTask && canHaveChildren(editingTask, indexByUid(tasks))
+                ? task => {
+                  const stored = calendarStorage.getTasks().find(t => t.uid === task.uid) ?? task;
+                  if (!stored.dueDate) {
+                    return;
+                  }
+                  setShowItemCreationModal(false);
+                  setPlanningSteps({ ...stored, dueDate: stored.dueDate });
+                }
                 : undefined
             }
             eventNotePath={editingEvent ? eventNotePaths[editingEvent.uid] : undefined}
