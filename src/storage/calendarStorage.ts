@@ -543,22 +543,26 @@ export class CalendarStorage {
         throw new Error('Encrypted connection storage is unavailable in this build.');
       }
 
-      await Promise.all([
-        AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(persistable)),
-        AsyncStorage.setItem(MAPPINGS_KEY, JSON.stringify(this.mappings)),
-        AsyncStorage.setItem(USER_EVENTS_KEY, JSON.stringify(this.userEvents)),
-        AsyncStorage.setItem(TASKS_KEY, JSON.stringify(this.tasks)),
-        AsyncStorage.setItem(PUSH_STATE_KEY, JSON.stringify(this.pushState)),
-        AsyncStorage.setItem(TASK_PUSH_STATE_KEY, JSON.stringify(this.taskPushStates)),
-        AsyncStorage.setItem(PENDING_TASK_DELETES_KEY, JSON.stringify(this.pendingTaskDeletes)),
-        AsyncStorage.setItem(CALDAV_EVENTS_KEY, JSON.stringify(this.caldavEvents)),
-        AsyncStorage.setItem(EVENT_KINDS_KEY, JSON.stringify(this.eventKinds)),
-        AsyncStorage.setItem(AREAS_KEY, JSON.stringify(this.areas)),
-        AsyncStorage.setItem(PROJECTS_KEY, JSON.stringify(this.projects)),
-        AsyncStorage.setItem(RESOURCES_KEY, JSON.stringify(this.resources)),
-        AsyncStorage.setItem(MEMBERSHIP_KEY, JSON.stringify(this.membership)),
-        AsyncStorage.setItem(PENDING_DELETES_KEY, JSON.stringify(this.pendingDeletes)),
-        AsyncStorage.setItem(EVENT_TYPES_KEY, JSON.stringify(this.eventTypes)),
+      // One multiSet, not fifteen setItems: on Android it is a single SQLite
+      // transaction, so an interrupted save leaves the whole workspace from
+      // either the old save or the new one, never tasks from one and their
+      // links or Projects from the other. Restore already writes this way.
+      await AsyncStorage.multiSet([
+        [SETTINGS_KEY, JSON.stringify(persistable)],
+        [MAPPINGS_KEY, JSON.stringify(this.mappings)],
+        [USER_EVENTS_KEY, JSON.stringify(this.userEvents)],
+        [TASKS_KEY, JSON.stringify(this.tasks)],
+        [PUSH_STATE_KEY, JSON.stringify(this.pushState)],
+        [TASK_PUSH_STATE_KEY, JSON.stringify(this.taskPushStates)],
+        [PENDING_TASK_DELETES_KEY, JSON.stringify(this.pendingTaskDeletes)],
+        [CALDAV_EVENTS_KEY, JSON.stringify(this.caldavEvents)],
+        [EVENT_KINDS_KEY, JSON.stringify(this.eventKinds)],
+        [AREAS_KEY, JSON.stringify(this.areas)],
+        [PROJECTS_KEY, JSON.stringify(this.projects)],
+        [RESOURCES_KEY, JSON.stringify(this.resources)],
+        [MEMBERSHIP_KEY, JSON.stringify(this.membership)],
+        [PENDING_DELETES_KEY, JSON.stringify(this.pendingDeletes)],
+        [EVENT_TYPES_KEY, JSON.stringify(this.eventTypes)],
       ]);
       this.lastPersistenceError = '';
     } catch (e: any) {

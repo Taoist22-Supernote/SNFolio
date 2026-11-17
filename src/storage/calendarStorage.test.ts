@@ -174,6 +174,27 @@ describe('calendarStorage', () => {
   });
 });
 
+describe('saving', () => {
+  test('a save writes the whole workspace in one transaction', async () => {
+    await flushWrites();
+    const multiSet = AsyncStorage.multiSet as jest.Mock;
+    const setItem = AsyncStorage.setItem as jest.Mock;
+    multiSet.mockClear();
+    setItem.mockClear();
+    calendarStorage.upsertTask({ uid: 'one-write', title: 'One write', completed: false, status: 'todo', createdAt: new Date() });
+    await calendarStorage.flush();
+    // setItem in the mock goes through multiSet too, so it must not be called.
+    expect(setItem).not.toHaveBeenCalled();
+    // upsertTask saves and flush saves again: each is one write of every record.
+    expect(multiSet.mock.calls.length).toBeGreaterThan(0);
+    for (const [entries] of multiSet.mock.calls as [[string, string][]][]) {
+      expect(entries).toHaveLength(15);
+      expect(entries.map(([key]) => key)).toContain('@sn-calendar/settings');
+      expect(entries.some(([, value]) => value.includes('one-write'))).toBe(true);
+    }
+  });
+});
+
 describe('credential handling', () => {
   beforeEach(async () => {
     await AsyncStorage.clear();
