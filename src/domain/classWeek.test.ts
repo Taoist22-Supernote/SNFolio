@@ -27,13 +27,14 @@ describe('where a class is in its weeks', () => {
     if (summary.state !== 'during') {throw new Error();}
     expect(summary.start).toEqual(on(16));
     expect(summary.end).toEqual(on(22));
-    expect(summary.items.map(i => [i.kind, i.task.uid, i.at.getDate()])).toEqual([
-      ['due', 'Read', 17],
-      ['session', 'Draft initial post', 18],
-      ['due', 'Draft initial post', 19],
-      ['session', 'Project One', 19],
-      ['session', 'Project One', 20],
-      ['due', 'Project One', 22],
+    // One row per task per day: a step planned on its due day is one row.
+    expect(summary.items.map(i => [i.task.uid, i.day.getDate(), i.due, i.sessions.map(x => x.id)])).toEqual([
+      ['Read', 17, true, []],
+      ['Draft initial post', 18, false, ['s1']],
+      ['Draft initial post', 19, true, []],
+      ['Project One', 19, false, ['s2']],
+      ['Project One', 20, false, ['s1']],
+      ['Project One', 22, true, []],
     ]);
     expect(classWeekLabel(summary)).toBe('📆 Week 4 of 9 · Nov 16 – 22 · 3 due · 3 sessions planned');
   });
@@ -68,6 +69,16 @@ describe('where a class is in its weeks', () => {
 
   test('a work Project with a start date gets the line too', () => {
     expect(classWeekSummary({ ...psy, category: 'work' }, [], now)).toMatchObject({ state: 'during', week: 4 });
+  });
+
+  test('planned on the day it is due is one row with both', () => {
+    const step = withSession(withSession(task('Outline', { dueDate: on(18), allDay: true }), on(18, 15), 60), on(18, 9), 30);
+    const summary = classWeekSummary(psy, [step], now)!;
+    if (summary.state !== 'during') {throw new Error();}
+    expect(summary.items).toHaveLength(1);
+    expect(summary.items[0]).toMatchObject({ due: true });
+    expect(summary.items[0].sessions.map(x => x.start.getHours())).toEqual([9, 15]);
+    expect(summary).toMatchObject({ due: 1, sessions: 2 });
   });
 
   test('singular wording', () => {

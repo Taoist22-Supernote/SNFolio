@@ -556,7 +556,7 @@ Diagnostic hidden before release (maintainer decision 2026-09-23): the timings t
 | ID | Test | Expected result |
 |---|---|---|
 | WK-01 | Open a Class Project with a start date and an end (due) date, during the class | Under the Project's name: **📆 Week N of M · Nov 16 – 22 · X due · Y sessions planned ▾**, with a **⚙ Weeks** button beside it. |
-| WK-02 | Tap the week line | It unfolds this week's open deadlines (**· due**) and planned sessions (**· ⏱ time**), in day order. Tapping one opens that task's Edit Task form. Tap the line again to fold it. |
+| WK-02 | Tap the week line | It unfolds this week's open tasks, one row per task per day, in day order: **Wed, Nov 18 · ⏱ 1:00 PM · due** when planned on the day it's due, **· ⏱ time** when only planned that day, **· due** when only due. No task appears twice for the same day. Tapping a row opens that task's Edit Task form. Tap the line again to fold it. |
 | WK-03 | A week with nothing due or planned | Unfolded, it says **Nothing due or planned this week.** |
 | WK-04 | Tap **⚙ Weeks** | Project settings opens, with the Weeks settings (start date, Weeks run, Create Week Folders) in it. |
 | WK-05 | Open a Class Project with no start date | The line reads **📆 Weeks not set · Set start date**; tapping it opens the start date picker. |

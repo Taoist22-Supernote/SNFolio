@@ -271,6 +271,19 @@ describe('this week, at the top of a class', () => {
     act(() => tree.unmount());
   });
 
+  test('a step planned on its due day is one row', () => {
+    const sameDay = { ...post, dueDate: new Date(2026, 10, 18), allDay: true };
+    const { tree } = render(psy, { tasks: [sameDay], projectOf: () => 'psy' });
+    press(tree, '📆 Week 4 of 9');
+    const text = textOf(tree);
+    expect(text).toContain('Wed, Nov 18 · ⏱ 1:00 PM · due|Draft initial post');
+    // Not also as a separate session row or deadline row. (Its other mention
+    // is the Actionable Deliverables list further down.)
+    expect(text).not.toContain('Wed, Nov 18 · ⏱ 1:00 PM|');
+    expect(text).not.toContain('Wed, Nov 18 · due|');
+    act(() => tree.unmount());
+  });
+
   test('an empty week says so', () => {
     const { tree } = render(psy);
     press(tree, '📆 Week 4 of 9');

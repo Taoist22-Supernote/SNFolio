@@ -767,13 +767,16 @@ export function ProjectDetailView({
               )}
               {thisWeek.items.map(item => (
                 <TouchableOpacity
-                  key={item.kind === 'session' ? `s-${item.task.uid}-${item.session.id}` : `d-${item.task.uid}`}
+                  key={`${item.task.uid}-${item.day.getTime()}`}
                   style={styles.upcomingRow}
                   onPress={() => onEditTask(item.task)}
                 >
                   <Text allowFontScaling={false} style={styles.upcomingWhen}>
-                    {item.at.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                    {item.kind === 'session' ? ` · ⏱ ${formatTimeOfDay(minutesFromDate(item.at), timeFormat)}` : ' · due'}
+                    {item.day.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                    {item.sessions.length > 0
+                      ? ` · ⏱ ${formatTimeOfDay(minutesFromDate(item.sessions[0].start), timeFormat)}${item.sessions.length > 1 ? ` +${item.sessions.length - 1}` : ''}`
+                      : ''}
+                    {item.due ? ' · due' : ''}
                   </Text>
                   <Text allowFontScaling={false} style={styles.taskText} numberOfLines={1}>{item.task.title}</Text>
                 </TouchableOpacity>
