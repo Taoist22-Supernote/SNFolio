@@ -187,6 +187,7 @@ import { cleanRelativeNoteSubpath, paraEventNoteFolder } from '../domain/eventNo
 import { areaArchiveState, projectArchiveState } from '../domain/paraArchive';
 import { PlannedStep } from '../domain/stepPlans';
 import { StepPlanModal } from './StepPlanModal';
+import { HelpScreen } from './HelpScreen';
 import { defaultSessionMinutes, findSession, hasWorkTime, openSessions, sessionKey, suggestWorkStart, ticksLastSession, withoutSession, withSession, withSessionDone, workBlocksForDay, workOverlaps, workTimeLabel } from '../domain/workBlocks';
 import { WorkTimeModal } from './WorkTimeModal';
 
@@ -445,6 +446,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
   const [pendingDeleteNoteTask, setPendingDeleteNoteTask] = useState<CalendarTask | null>(null);
   /** The last planned session was just ticked: is the task finished too? */
   const [askFinishTask, setAskFinishTask] = useState<CalendarTask | null>(null);
+  /** The built-in Guide (src/help/helpContent.ts), from the ⚙ menu. */
+  const [showGuide, setShowGuide] = useState(false);
   /** The assignment being broken into steps, from its Edit Task form. */
   const [planningSteps, setPlanningSteps] = useState<(CalendarTask & { dueDate: Date }) | null>(null);
   /** Help & Setup: what a pre-0.1.24 version left queued for deletion; null until checked. */
@@ -5164,6 +5167,10 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
         </TouchableOpacity>
       </Modal>
 
+      <Modal visible={showGuide} animationType="none" onRequestClose={() => setShowGuide(false)}>
+        <HelpScreen initialTopicId={null} onDone={() => setShowGuide(false)} />
+      </Modal>
+
       <Modal visible={showAppMenu} transparent animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowAppMenu(false)}>
           <View style={styles.actionSheetContentCompact}>
@@ -5187,6 +5194,12 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
               <Text allowFontScaling={false} style={styles.actionSheetBtnText}>
                 ⚙ {showSettings ? 'Close Settings' : 'Connections & Settings'}
               </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.actionSheetBtn} onPress={() => {
+              setShowAppMenu(false);
+              setShowGuide(true);
+            }}>
+              <Text allowFontScaling={false} style={styles.actionSheetBtnText}>📖 Guide</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.deleteOptionBtnDanger} onPress={() => {
               setShowAppMenu(false);

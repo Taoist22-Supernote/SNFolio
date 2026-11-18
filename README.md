@@ -17,6 +17,7 @@ An e-ink-optimized planner, calendar, task, PARA, and note workspace for Superno
 
 ## Start Here
 
+- **Built-in Guide** — in SNFolio, tap **⚙ → 📖 Guide** for a page-by-page manual. The same text prints as `docs/SNFolio_User_Manual_v<version>.html` (`node scripts/build-manual.js`); edit `src/help/helpContent.ts` to change both.
 - [Getting Started](docs/GETTING_STARTED.md) — install SNFolio and choose the simplest setup for your needs.
 - [Calendar Connections](docs/CALENDAR_CONNECTIONS.md) — Google feeds, iCloud CalDAV, custom CalDAV, and what is editable.
 - [PARA and Notes](docs/PARA_AND_NOTES.md) — what Projects, Areas, Resources, and Archive mean in SNFolio.
