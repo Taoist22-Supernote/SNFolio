@@ -165,6 +165,48 @@ describe('work blocks on the schedule', () => {
   });
 });
 
+describe('a block too short for the button row', () => {
+  const short = withSession(
+    { uid: 'quick', title: 'Quick review', completed: false, status: 'todo', createdAt: at(7) },
+    at(16),
+    30,
+  );
+  const byLabel = (tree: TestRenderer.ReactTestRenderer, label: string) =>
+    tree.root.findAll(node => node.type === TouchableOpacity && node.props.accessibilityLabel === label);
+
+  test('keeps Move and the note as icons on its title line', () => {
+    const onPlanTask = jest.fn();
+    const onTaskNoteAction = jest.fn();
+    const tree = render(at(9), { workBlocks: workBlocksForDay([short], at(0)), onPlanTask, onTaskNoteAction, events: [] });
+    expect(textOf(tree)).not.toContain('⏱ Move');
+    act(() => byLabel(tree, 'Move Quick review')[0].props.onPress());
+    act(() => byLabel(tree, 'Create Note for Quick review')[0].props.onPress());
+    expect(onPlanTask).toHaveBeenCalledWith(short, 's1');
+    expect(onTaskNoteAction).toHaveBeenCalledWith(short);
+  });
+
+  test('the note icon says what it opens, and a missed block replans', () => {
+    const tree = render(at(18), { workBlocks: workBlocksForDay([short], at(0)), onPlanTask: jest.fn(), onTaskNoteAction: jest.fn(), events: [] },
+      { quick: '/x/Reading.pdf' });
+    expect(textOf(tree)).toContain('📄');
+    expect(byLabel(tree, 'Open PDF for Quick review')).toHaveLength(1);
+    expect(byLabel(tree, 'Replan Quick review')).toHaveLength(1);
+  });
+
+  test('a ticked short block keeps the note icon but not Move', () => {
+    const ticked = withSessionDone(short, 's1', true);
+    const tree = render(at(9), { workBlocks: workBlocksForDay([ticked], at(0)), onPlanTask: jest.fn(), onTaskNoteAction: jest.fn(), events: [] });
+    expect(byLabel(tree, 'Move Quick review')).toHaveLength(0);
+    expect(byLabel(tree, 'Create Note for Quick review')).toHaveLength(1);
+  });
+
+  test('a tall block has the button row and no icons', () => {
+    const tree = render(at(9), { onPlanTask: jest.fn(), onTaskNoteAction: jest.fn(), hourHeight: 80, events: [] });
+    expect(textOf(tree)).toContain('⏱ Move');
+    expect(byLabel(tree, 'Move Draft essay')).toHaveLength(0);
+  });
+});
+
 describe('clash marker', () => {
   const overMeeting = withSession(
     { uid: 'clash', title: 'Read chapter', completed: false, status: 'todo', createdAt: at(7) },

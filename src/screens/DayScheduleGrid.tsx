@@ -201,6 +201,32 @@ function DayScheduleGridInner({
                       <LinkedFileMarker item={task} />{task.title}
                     </Text>
                   </TouchableOpacity>
+                  {/* A block too short for the button row (a 30-minute session)
+                      keeps the note and Move as icons on its title line, or it
+                      could not be moved from the schedule at all (CT,
+                      2026-11-17). ✕ is in the planner, as Take off schedule. */}
+                  {blockHeight < ACTIONS_MIN_HEIGHT && onTaskNoteAction && (
+                    <TouchableOpacity
+                      style={styles.workIconBtn}
+                      hitSlop={ICON_HIT_SLOP}
+                      onPress={() => onTaskNoteAction(task)}
+                      accessibilityLabel={`${noteActionLabel(linkedPaths[task.uid]).replace(/^\S+ /, '')} for ${task.title}`}
+                    >
+                      <Text allowFontScaling={false} style={[styles.workIcon, inverted && styles.workTextNow]}>
+                        {noteActionLabel(linkedPaths[task.uid]).split(' ')[0]}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {blockHeight < ACTIONS_MIN_HEIGHT && state !== 'done' && (
+                    <TouchableOpacity
+                      style={styles.workIconBtn}
+                      hitSlop={ICON_HIT_SLOP}
+                      onPress={() => onPlanTask?.(task, session.id)}
+                      accessibilityLabel={`${state === 'missed' ? 'Replan' : 'Move'} ${task.title}`}
+                    >
+                      <Text allowFontScaling={false} style={[styles.workIcon, inverted && styles.workTextNow]}>⏱</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
                 {blockHeight >= META_MIN_HEIGHT && meta ? (
                   <Text allowFontScaling={false} style={[styles.blockMeta, inverted && styles.workTextNow]} numberOfLines={1}>
@@ -308,6 +334,7 @@ function noteActionLabel(path?: string): string {
 
 const ACTIONS_MIN_HEIGHT = 46;
 const META_MIN_HEIGHT = 66;
+const ICON_HIT_SLOP = { top: 10, bottom: 10, left: 6, right: 6 };
 
 /**
  * Changing day re-rendered this five or six times — the day's events, the note
@@ -387,6 +414,8 @@ const styles = StyleSheet.create({
   workBlockDone: { borderWidth: 1, borderColor: '#909090', backgroundColor: '#ffffff' },
   workTitleRow: { flexDirection: 'row', alignItems: 'flex-start' },
   workCheck: { fontSize: 14, color: '#000000', marginRight: 5 },
+  workIconBtn: { paddingHorizontal: 6 },
+  workIcon: { fontSize: 14, color: '#000000' },
   workTextNow: { color: '#ffffff' },
   workState: { fontWeight: 'bold' },
   workTitleDone: { textDecorationLine: 'line-through', color: '#707070' },

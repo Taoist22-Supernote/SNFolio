@@ -529,6 +529,7 @@ Diagnostic hidden before release (maintainer decision 2026-09-23): the timings t
 | WRK-25 | Plan one session for a task in a Project, then tick its block on the schedule | A box asks **Is the task finished?** **Yes, finish the task** ticks the task, and it leaves Actionable Deliverables and shows under Completed. |
 | WRK-26 | Same, but press **Not yet, keep it open** (or tap outside the box) | The task stays open and in Actionable Deliverables; the status line says it stays open. |
 | WRK-27 | Plan two sessions for a task, tick the first block, then the second | No question after the first; the question comes after the second. Unticking a block never asks. |
+| WRK-28 | Plan a 30-minute session and look at its block | Its title line ends with a note icon (📝, 📂 or 📄) and **⏱**. ⏱ opens the planner on that session (move it, or **Take off schedule**); the note icon creates or opens its note. Once ticked, only the note icon stays. Blocks of an hour or more look as before. |
 
 ## Atoms Inbox reminder (needs Atoms 103902a or later)
 
