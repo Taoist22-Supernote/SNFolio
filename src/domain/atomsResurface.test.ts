@@ -127,3 +127,27 @@ describe('Inbox reminder', () => {
     expect(resurfaceStripLabel(0, empty, undefined, NOW)).toBe('💡 Nothing to resurface today');
   });
 });
+
+describe('Not Now and learning status from Atoms (2026-11-17)', () => {
+  const withDue = (dueAt: Record<string, number>) => {
+    const s = JSON.parse(summaryText());
+    s.atoms = s.atoms.map((a: { id: string }) => (a.id in dueAt ? { ...a, dueAt: dueAt[a.id] } : a));
+    return parseResurfaceSummary(JSON.stringify(s));
+  };
+
+  test("an idea's own due date decides, when Atoms sends one", () => {
+    // a: long unseen but snoozed for a week; e: seen 2 days ago but needs practice and is due.
+    const s = withDue({ a: NOW + 5 * DAY, e: NOW - 1 });
+    expect(dueResurfaceAtoms(s, [], NOW, 10).map(a => a.id)).toEqual(['b', 'c', 'd', 'e']);
+  });
+
+  test('without one, the old rule still applies', () => {
+    expect(dueResurfaceAtoms(parseResurfaceSummary(summaryText()), [], NOW, 10).map(a => a.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  test('Not Now is sent as a snooze and drops out here at once', () => {
+    const actions = withAction([], 'a', 'snooze', NOW);
+    expect(parseAtomsActions(actionsFileText(actions))).toEqual([{ id: 'a', action: 'snooze', at: NOW }]);
+    expect(dueResurfaceAtoms(parseResurfaceSummary(summaryText()), actions, NOW, 10).map(a => a.id)).toEqual(['b', 'c', 'd']);
+  });
+});

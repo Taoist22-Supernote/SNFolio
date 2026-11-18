@@ -22,6 +22,12 @@ export interface ResurfaceAtom {
   title: string;
   words: string;
   lastSeen: number;
+  /**
+   * When Atoms says it is due: after its own gap (3 days while it needs
+   * practice) or a Not Now week. Absent from older Atoms builds, which are
+   * due by lastSeen and the setting.
+   */
+  dueAt?: number;
   source: { kind: string; path: string; title: string; page: number };
 }
 
@@ -47,7 +53,8 @@ export interface ResurfaceSummary {
   inbox: AtomsInbox;
 }
 
-export type AtomsActionKind = 'seen' | 'dismiss';
+/** 'snooze' is Not Now (back in a week); older Atoms builds ignore it. */
+export type AtomsActionKind = 'seen' | 'dismiss' | 'snooze';
 
 export interface AtomsAction {
   id: string;
@@ -79,6 +86,7 @@ export function parseResurfaceSummary(raw: string | null): ResurfaceSummary | nu
         title: a.title,
         words: a.words,
         lastSeen: a.lastSeen,
+        ...(isNum(a.dueAt) ? { dueAt: a.dueAt } : {}),
         source: { kind: isStr(s.kind) ? s.kind : 'other', path: s.path, title: s.title, page: Math.max(0, Math.floor(s.page)) },
       });
     }
@@ -141,7 +149,7 @@ export function parseAtomsActions(raw: string | null): AtomsAction[] {
   }
   const out: AtomsAction[] = [];
   for (const a of Array.isArray(parsed?.actions) ? parsed.actions : []) {
-    if (a && isStr(a.id) && (a.action === 'seen' || a.action === 'dismiss') && isNum(a.at)) {
+    if (a && isStr(a.id) && (a.action === 'seen' || a.action === 'dismiss' || a.action === 'snooze') && isNum(a.at)) {
       out.push({ id: a.id, action: a.action, at: a.at });
     }
   }
@@ -162,7 +170,8 @@ export function dueResurfaceAtoms(
   if (!summary) return [];
   const cutoff = now - summary.resurfaceDays * DAY_MS;
   const actedSince = new Set(actions.filter(a => a.at > summary.writtenAt).map(a => a.id));
-  return summary.atoms.filter(a => a.lastSeen <= cutoff && !actedSince.has(a.id)).slice(0, limit);
+  const due = (a: ResurfaceAtom) => (a.dueAt !== undefined ? a.dueAt <= now : a.lastSeen <= cutoff);
+  return summary.atoms.filter(a => due(a) && !actedSince.has(a.id)).slice(0, limit);
 }
 
 /** The actions file after one more tap: newest kept, times always increasing. */

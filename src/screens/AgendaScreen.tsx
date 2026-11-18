@@ -4783,7 +4783,7 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
     : '';
 
   /** Records a Day Planner tap for Atoms; the idea drops out here at once. */
-  const tellAtoms = async (atom: ResurfaceAtom, action: 'seen' | 'dismiss'): Promise<boolean> => {
+  const tellAtoms = async (atom: ResurfaceAtom, action: 'seen' | 'dismiss' | 'snooze'): Promise<boolean> => {
     const next = await recordAtomsAction(atom.id, action);
     if (!next) {
       setResurfaceMessage('Could not pass that on to Atoms. Open Atoms and set it there instead.');
@@ -8008,7 +8008,8 @@ export function AgendaScreen({ onWorkspaceRestored = () => {}, workspaceNotice =
         message={resurfaceMessage}
         onOpenSource={atom => void handleResurfaceOpen(atom)}
         onNotNow={atom => {
-          void tellAtoms(atom, 'seen').then(ok => { if (ok) setResurfaceMessage('Set aside. It will come back after the usual gap.'); });
+          // Not Now is "not today": Atoms brings it back in a week (CT, 2026-11-17).
+          void tellAtoms(atom, 'snooze').then(ok => { if (ok) setResurfaceMessage('Set aside. It will come back in a week.'); });
         }}
         onDismiss={atom => {
           void tellAtoms(atom, 'dismiss').then(ok => { if (ok) setResurfaceMessage('It won’t resurface again. Turn it back on from its page in Atoms.'); });

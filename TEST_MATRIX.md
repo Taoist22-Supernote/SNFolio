@@ -540,6 +540,8 @@ Diagnostic hidden before release (maintainer decision 2026-09-23): the timings t
 | INB-02 | Close SNFolio and open it again from the toolbar, a few times | Each opening shows the next waiting atom, then wraps to the oldest. Changing the day in between does not change it. |
 | INB-03 | Promote every Inbox atom in Atoms, then open SNFolio | The Inbox part disappears; the strip reads as before (ideas to resurface, or nothing to resurface today). |
 | INB-04 | With the old Atoms 0.3.0-beta installed | The strip looks exactly as in 0.1.33; nothing about an Inbox. |
+| INB-05 | (Needs Atoms with Study, 2026-11-17) In the Day Planner's 💡 Resurface list, tap **Not Now** on an idea | It says it will come back in a week. Open Atoms: the idea is not in Resurface there either; it is back after 7 days. |
+| INB-06 | In Atoms, mark an idea you looked at 4+ days ago **Needs practice**, then open SNFolio | The 💡 Resurface count includes it (3-day gap), though the usual gap is longer. |
 
 ## Plan from steps — local validation
 
