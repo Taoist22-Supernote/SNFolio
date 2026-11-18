@@ -162,7 +162,7 @@ export function WeeklyReviewView({
         </View>
         {/* Said once, because "done" reads like a timesheet and is not one. */}
         <Text allowFontScaling={false} style={styles.workNote}>
-          Done is the planned length of the sessions you ticked, not time measured.
+          Done is the planned length of the sessions you ticked, not time measured. Sessions still ahead when a task was finished are left out.
         </Text>
         {work.byProject.map(row => {
           const percent = row.plannedMinutes > 0 ? (row.doneMinutes / row.plannedMinutes) * 100 : 0;

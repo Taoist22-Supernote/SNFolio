@@ -1,6 +1,6 @@
 import { CalendarTask, Project } from './types';
 import { WeekRange } from './plannerReview';
-import { minutesOf, sessionsOf, WorkBlock, workBlockState } from './workBlocks';
+import { minutesOf, sessionNotNeeded, sessionsOf, WorkBlock, workBlockState } from './workBlocks';
 
 /**
  * Planned against done, for the Weekly Review (CT, 2026-11-15).
@@ -8,6 +8,8 @@ import { minutesOf, sessionsOf, WorkBlock, workBlockState } from './workBlocks';
  * "Done" is the planned length of the sessions that were ticked off, not time
  * measured: SNFolio has no timer, so a ticked 90-minute block counts as 90
  * minutes. The point is to see where the week's plan went, not to log hours.
+ * Sessions a task no longer needed, because it was finished before they came
+ * round, are left out altogether: neither planned nor done.
  */
 export interface ProjectWorkTime {
   /** Undefined for the "No project" row. */
@@ -19,7 +21,7 @@ export interface ProjectWorkTime {
 export interface WorkWeekSummary {
   /** Every session this week, whatever happened to it. */
   plannedMinutes: number;
-  /** Ticked sessions, and every session of a finished task. */
+  /** Ticked sessions, and a finished task's sessions up to when it was finished. */
   doneMinutes: number;
   /** Time passed, still open: what Replan is for. */
   missedMinutes: number;
@@ -49,6 +51,7 @@ export function workWeekSummary(
     for (const session of sessionsOf(task)) {
       const at = session.start.getTime();
       if (at < range.start.getTime() || at >= range.endExclusive.getTime()) {continue;}
+      if (sessionNotNeeded({ task, session })) {continue;}
       const minutes = minutesOf(session);
       const state = workBlockState({ task, session }, now);
       summary.plannedMinutes += minutes;

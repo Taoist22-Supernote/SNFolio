@@ -197,6 +197,18 @@ export function workBlockState(block: WorkBlock, now: Date): WorkBlockState {
   return 'planned';
 }
 
+/**
+ * A session left unticked that was still ahead when its task was finished: the
+ * task got done early and the sitting was never needed. The schedule shows it
+ * ticked with its task, but it is not time worked, so Work Time leaves it out
+ * (CT, 2026-11-17). A task finished with no recorded time keeps the old rule.
+ */
+export function sessionNotNeeded(block: WorkBlock): boolean {
+  const finished = block.task.completedAt;
+  return isDone(block.task) && !block.session.done && !!finished
+    && block.session.start.getTime() >= finished.getTime();
+}
+
 /** Something that already claims time on a day, in minutes from midnight. */
 export interface BusySpan {
   title: string;

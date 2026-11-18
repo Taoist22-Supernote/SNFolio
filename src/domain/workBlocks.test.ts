@@ -7,6 +7,7 @@ import {
   reviveWorkSessions,
   sessionKey,
   sessionKeyOfWorkBlock,
+  sessionNotNeeded,
   sessionsOf,
   suggestWorkStart,
   ticksLastSession,
@@ -135,6 +136,25 @@ describe('the day a block sits on', () => {
     const placedBlock = placed.find(p => isWorkBlockUid(p.event.uid));
     expect(placedBlock?.height).toBe(60);
     expect(sessionKeyOfWorkBlock(placedBlock!.event.uid)).toBe('essay:s1');
+  });
+});
+
+describe('sessions a finished task no longer needed', () => {
+  const twice = planned('essay', [at(9), at(14)]);
+  const finishedAt = (date: Date) => ({ ...twice, completed: true, status: 'done' as const, completedAt: date });
+
+  test('only those still ahead when it was finished, and not ticked', () => {
+    const early = finishedAt(at(11));
+    expect(sessionNotNeeded({ task: early, session: findSession(early, 's1')! })).toBe(false);
+    expect(sessionNotNeeded({ task: early, session: findSession(early, 's2')! })).toBe(true);
+    const ticked = withSessionDone(early, 's2', true);
+    expect(sessionNotNeeded({ task: ticked, session: findSession(ticked, 's2')! })).toBe(false);
+  });
+
+  test('an open task, or one with no finish time, needs them all', () => {
+    expect(sessionNotNeeded({ task: twice, session: findSession(twice, 's2')! })).toBe(false);
+    const noTime = { ...twice, completed: true, status: 'done' as const };
+    expect(sessionNotNeeded({ task: noTime, session: findSession(noTime, 's2')! })).toBe(false);
   });
 });
 

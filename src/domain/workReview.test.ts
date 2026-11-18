@@ -46,6 +46,25 @@ describe('work time this week', () => {
     expect(only).toMatchObject({ plannedMinutes: 45, doneMinutes: 45, missedMinutes: 0 });
   });
 
+  test('a task finished early drops its later sessions, which were never worked', () => {
+    // Planned Mon, Tue and Fri; finished Tue at 11 without ticking any session.
+    const early = {
+      ...withSession(withSession(withSession(task('early', { title: 'Early' }), on(16, 9), 60), on(17, 9), 60), on(20, 9), 60),
+      completed: true, status: 'done' as const, completedAt: on(17, 11),
+    };
+    expect(workWeekSummary([early], range, now, projects, projectOf)).toMatchObject({
+      plannedMinutes: 120, doneMinutes: 120, missedMinutes: 0, aheadMinutes: 0,
+    });
+  });
+
+  test('a later session that was ticked still counts', () => {
+    const ticked = {
+      ...withSessionDone(withSession(task('t'), on(20, 9), 60), 's1', true),
+      completed: true, status: 'done' as const, completedAt: on(17, 11),
+    };
+    expect(workWeekSummary([ticked], range, now, projects, projectOf).doneMinutes).toBe(60);
+  });
+
   test('one row per Project, most planned first, with No project last', () => {
     expect(summary.byProject.map(row => [row.project?.name ?? 'No project', row.plannedMinutes, row.doneMinutes])).toEqual([
       ['IDS105', 240, 90],
